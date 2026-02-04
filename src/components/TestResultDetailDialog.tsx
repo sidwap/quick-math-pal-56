@@ -24,6 +24,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
 import { compareWords, ComparisonResult } from '@/utils/wordComparison';
 import { getExamConfig, getExamShortName, isQualified as checkQualification, type ExamType } from '@/config/examConfig';
+import UPPoliceResultDialog from './UPPoliceResultDialog';
 
 interface TestResultDetailDialogProps {
   isOpen: boolean;
@@ -33,6 +34,10 @@ interface TestResultDetailDialogProps {
 
 const TestResultDetailDialog = ({ isOpen, onClose, result }: TestResultDetailDialogProps) => {
   const printRef = useRef<HTMLDivElement>(null);
+  
+  // Determine if this is a UP Police exam result
+  const examType = (result?.exam_type || 'all_exam') as ExamType;
+  const isUPPoliceExam = examType === 'up_police';
   
   // Fetch the test content for paragraph comparison
   // IMPORTANT: All hooks must be called before any conditional returns
@@ -49,7 +54,7 @@ const TestResultDetailDialog = ({ isOpen, onClose, result }: TestResultDetailDia
       if (error) throw error;
       return data;
     },
-    enabled: !!result?.test_id && isOpen
+    enabled: !!result?.test_id && isOpen && !isUPPoliceExam
   });
 
   // Compute word comparison using LCS algorithm - must be after useQuery but before early return
@@ -57,6 +62,17 @@ const TestResultDetailDialog = ({ isOpen, onClose, result }: TestResultDetailDia
     if (!testData?.content || !result?.typed_text) return null;
     return compareWords(testData.content, result.typed_text);
   }, [testData?.content, result?.typed_text]);
+
+  // For UP Police exam, render the specialized dialog
+  if (isUPPoliceExam && result) {
+    return (
+      <UPPoliceResultDialog
+        isOpen={isOpen}
+        onClose={onClose}
+        result={result}
+      />
+    );
+  }
 
   // Early return AFTER all hooks have been called
   if (!result) return null;
@@ -96,8 +112,7 @@ const TestResultDetailDialog = ({ isOpen, onClose, result }: TestResultDetailDia
     ? Math.max(0, ((typedKeystrokes / 5) - totalErrors) / timeTakenMinutes) 
     : 0;
 
-  // Get exam configuration for this result
-  const examType = (result.exam_type || 'all_exam') as ExamType;
+  // Get exam configuration for this result (reuse examType from above)
   const examConfig = getExamConfig(examType);
   
   // Determine qualification status based on exam-specific rules
