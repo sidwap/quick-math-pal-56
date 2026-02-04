@@ -672,7 +672,7 @@ const ExamManager = () => {
                       show_qualification_status: checked 
                     }))}
                   />
-                  <Label>Show Qualification Status</Label>
+                  <Label>Show Qualification Status (Qualified/Not Qualified)</Label>
                 </div>
                 
                 <div className="flex items-center gap-2">

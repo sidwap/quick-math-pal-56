@@ -308,6 +308,7 @@ const Results = ({ results }: ResultsProps) => {
                     const isTopPerformer = test.wpm >= Math.max(...testHistory.map((t: any) => t.wpm)) * 0.9;
                     const isQualified = test.is_qualified ?? (test.accuracy >= 85 && (test.time_taken >= 600 || (test.total_words || 0) >= 400));
                     const totalKeystrokes = test.total_keystrokes || (test.correct_keystrokes || 0) + (test.wrong_keystrokes || 0);
+                    const isStandardExam = test.exam_type === 'all_exam' || !test.exam_type;
                     
                     return (
                       <Card key={test.id} className={`transition-all hover:shadow-lg ${isTopPerformer ? 'border-yellow-400 dark:border-yellow-600' : ''}`}>
@@ -320,19 +321,22 @@ const Results = ({ results }: ResultsProps) => {
                                 </div>
                                 <h4 className="font-semibold text-lg">{test.typing_tests?.title || 'Unknown Test'}</h4>
                                 {isTopPerformer && <Trophy className="h-4 w-4 text-yellow-500" />}
-                                <Badge 
-                                  className={`text-xs ${
-                                    isQualified 
-                                      ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' 
-                                      : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                                  }`}
-                                >
-                                  {isQualified ? (
-                                    <><CheckCircle className="h-3 w-3 mr-1" /> Qualified</>
-                                  ) : (
-                                    <><AlertCircle className="h-3 w-3 mr-1" /> Not Qualified</>
-                                  )}
-                                </Badge>
+                                {/* Only show qualification badge for non-standard exams */}
+                                {!isStandardExam && (
+                                  <Badge 
+                                    className={`text-xs ${
+                                      isQualified 
+                                        ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' 
+                                        : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                                    }`}
+                                  >
+                                    {isQualified ? (
+                                      <><CheckCircle className="h-3 w-3 mr-1" /> Qualified</>
+                                    ) : (
+                                      <><AlertCircle className="h-3 w-3 mr-1" /> Not Qualified</>
+                                    )}
+                                  </Badge>
+                                )}
                               </div>
                               
                               <div className="flex gap-2 mb-3 flex-wrap">
