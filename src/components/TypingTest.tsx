@@ -18,6 +18,7 @@ import { format } from 'date-fns';
 import { processText } from '@/utils/textNormalization';
 import { compareWords, ComparisonResult } from '@/utils/wordComparison';
 import UPPoliceResults from './UPPoliceResults';
+import StandardResults from './StandardResults';
 import ntaLogo from '@/assets/NTA_logo_1.png';
 
 interface TypingTest {
@@ -85,6 +86,8 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
   const [wordLimitEnabled, setWordLimitEnabled] = useState(true);
   const [wordLimit, setWordLimit] = useState(500);
   const [testSearchQuery, setTestSearchQuery] = useState('');
+  const [standardResult, setStandardResult] = useState<any>(null);
+  const [standardComparison, setStandardComparison] = useState<ComparisonResult | null>(null);
   
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const displayRef = useRef<HTMLDivElement>(null);
@@ -457,6 +460,8 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
     setUpPoliceComparison(null);
     setUpPoliceTypedText('');
     setUpPoliceTestStarted(false);
+    setStandardResult(null);
+    setStandardComparison(null);
     if (selectedTest) {
       setTimeLeft(selectedTest.time_limit);
       // Use word-limited content for total keystrokes
@@ -675,7 +680,8 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
             net_speed: netSpeed,
             backspace_count: backspaceCount,
             is_qualified: isQualified,
-            typed_text: typedText
+            typed_text: typedText,
+            word_limit_used: wordLimitEnabled ? wordLimit : null
           }]);
           
         if (insertError) {
@@ -710,44 +716,67 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
     }
     
     // Standard exam mode
-    const totalTypedChars = finalTypedWords.join('').length;
-    const correctWords = finalTypedWords.filter((word, index) => word === words[index]).length;
-    const incorrectWords = finalTypedWords.length - correctWords;
+    // Use LCS-based comparison for standard exam too
+    // Note: originalText and typedText are already defined earlier in this function
+    const comparisonResult = compareWords(originalText, typedText);
+    const stats = comparisonResult.stats;
     
-    const accuracy = finalTypedWords.length > 0 ? (correctWords / finalTypedWords.length) * 100 : 0;
+    const timeInMinutes = timeTaken / 60;
+    const actualTypedWords = comparisonResult.typedComparison.filter(item => item.status !== 'skipped').length;
+    const grossSpeed = timeInMinutes > 0 ? actualTypedWords / timeInMinutes : 0;
+    const netSpeed = timeInMinutes > 0 ? stats.correctWords / timeInMinutes : 0;
     
-    const wpm = Math.round((correctWords) / (timeTaken / 60));
-    const grossWpm = Math.round((finalTypedWords.length) / (timeTaken / 60));
+    const mm = Math.floor(timeTaken / 60);
+    const ss = Math.floor(timeTaken % 60);
     
     const keystrokeAccuracy = typedKeystrokes > 0 ? (correctKeystrokes / typedKeystrokes) * 100 : 0;
-    
     const wrongKeystrokes = typedKeystrokes - correctKeystrokes;
 
     const results = {
-      wpm,
-      grossWpm,
-      accuracy: Math.round(accuracy * 100) / 100,
-      totalWords: words.length,
-      typedWords: finalTypedWords.length,
-      correctWords,
-      incorrectWords,
-      totalKeystrokes,
-      typedKeystrokes,
+      wpm: Math.round(netSpeed),
+      grossWpm: Math.round(grossSpeed),
+      accuracy: stats.accuracy,
+      totalWords: stats.totalWords,
+      typedWords: actualTypedWords,
+      correctWords: stats.correctWords,
+      incorrectWords: stats.wrongWords,
+      totalKeystrokes: originalText.length,
+      typedKeystrokes: typedText.length,
       correctKeystrokes,
       keystrokeAccuracy: Math.round(keystrokeAccuracy * 100) / 100,
-      errors: wrongWords.size,
+      errors: stats.totalErrors,
       timeTaken: Math.round(timeTaken),
       totalTime: selectedTest?.time_limit || 60,
       testTitle: selectedTest?.title || 'Unknown Test',
       language: selectedTest?.language || 'english',
       testId: selectedTest?.id,
-      originalText: words.join(' '),
-      typedText: userInput,
+      originalText,
+      typedText,
       typedWordsArray: finalTypedWords,
       wrongWordIndices: Array.from(wrongWords)
     };
     
-    const qualifiesForLeaderboard = keystrokeAccuracy >= 85 && (timeTaken >= 600 || finalTypedWords.length >= 400);
+    // Set result for inline display
+    const standardResultData = {
+      testName: selectedTest?.title || 'Unknown Test',
+      language: selectedTest?.language === 'hindi' ? 'Hindi' : 'English',
+      grossSpeed,
+      netSpeed,
+      accuracy: stats.accuracy,
+      timeTaken: `${mm.toString().padStart(2, '0')}:${ss.toString().padStart(2, '0')}`,
+      totalWords: stats.totalWords,
+      wordsTyped: actualTypedWords,
+      correctWords: stats.correctWords,
+      wrongWords: stats.totalErrors,
+      totalKeystrokes: originalText.length,
+      typedKeystrokes: typedText.length,
+      backspaceCount
+    };
+    
+    setStandardResult(standardResultData);
+    setStandardComparison(comparisonResult);
+    
+    const qualifiesForLeaderboard = keystrokeAccuracy >= 85 && (timeTaken >= 600 || actualTypedWords >= 400);
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -769,7 +798,10 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
           time_taken: results.timeTaken,
           exam_type: 'all_exam',
           backspace_count: backspaceCount,
-          typed_text: userInput
+          typed_text: userInput,
+          word_limit_used: wordLimitEnabled ? wordLimit : null,
+          skipped_words: stats.skippedWords,
+          extra_words: stats.extraWords
         }]);
         
         if (insertError) {
@@ -780,30 +812,16 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
             variant: "destructive"
           });
         } else {
-          // Show congratulations or better luck toast for standard exam
+          // Show toast notification
+          toast({
+            title: "🎉 Test Completed!",
+            description: `WPM: ${results.wpm} | Accuracy: ${results.accuracy.toFixed(1)}%`,
+            className: "bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 text-white border-none shadow-2xl animate-in slide-in-from-top-5 duration-500",
+          });
+          
           if (qualifiesForLeaderboard) {
-            toast({
-              title: "🎉 Congratulations! Excellent Performance! 🏆",
-              description: `Amazing work! WPM: ${results.wpm} | Accuracy: ${results.accuracy.toFixed(1)}% - You've qualified for the leaderboard!`,
-              className: "bg-gradient-to-r from-green-500 via-emerald-500 to-teal-500 text-white border-none shadow-2xl animate-in slide-in-from-top-5 duration-500",
-            });
             setCurrentTestId(selectedTest.id);
             setShowLeaderboard(true);
-          } else {
-            const passed = results.accuracy >= 85;
-            if (passed) {
-              toast({
-                title: "🎉 Congratulations! Test Completed! ✨",
-                description: `Great job! WPM: ${results.wpm} | Accuracy: ${results.accuracy.toFixed(1)}% - Keep improving to reach the leaderboard!`,
-                className: "bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500 text-white border-none shadow-2xl animate-in slide-in-from-top-5 duration-500",
-              });
-            } else {
-              toast({
-                title: "💪 Better Luck Next Time!",
-                description: `Keep practicing! WPM: ${results.wpm} | Accuracy: ${results.accuracy.toFixed(1)}% - You need 85% accuracy to pass.`,
-                className: "bg-gradient-to-r from-orange-500 via-amber-500 to-yellow-500 text-white border-none shadow-2xl animate-in slide-in-from-top-5 duration-500",
-              });
-            }
           }
         }
       } else if (selectedTest?.id === 'custom-text') {
@@ -1101,6 +1119,19 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
       <UPPoliceResults
         result={upPoliceResult}
         comparison={upPoliceComparison}
+        originalText={words.join(' ')}
+        testDuration={selectedTest.time_limit}
+        onStartNewTest={resetTest}
+      />
+    );
+  }
+
+  // Standard Results Display
+  if (standardResult && standardComparison && selectedTest && selectedExamType !== 'up_police') {
+    return (
+      <StandardResults
+        result={standardResult}
+        comparison={standardComparison}
         originalText={words.join(' ')}
         testDuration={selectedTest.time_limit}
         onStartNewTest={resetTest}

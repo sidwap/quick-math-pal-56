@@ -1,6 +1,7 @@
 import React, { useMemo, useRef } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
@@ -17,21 +18,24 @@ import {
   FileText, 
   Hash,
   X,
-  Printer
+  Printer,
+  Clock,
+  Trophy
 } from 'lucide-react';
 
-interface UPPoliceResultDialogProps {
+interface StandardResultDialogProps {
   isOpen: boolean;
   onClose: () => void;
   result: any;
+  showQualificationStatus?: boolean;
 }
 
-const UPPoliceResultDialog = ({ isOpen, onClose, result }: UPPoliceResultDialogProps) => {
+const StandardResultDialog = ({ isOpen, onClose, result, showQualificationStatus = true }: StandardResultDialogProps) => {
   const printRef = useRef<HTMLDivElement>(null);
 
   // Fetch the test content for paragraph comparison
   const { data: testData } = useQuery({
-    queryKey: ['test-detail-uppolice', result?.test_id],
+    queryKey: ['test-detail-standard', result?.test_id],
     queryFn: async () => {
       if (!result?.test_id) return null;
       const { data, error } = await supabase
@@ -57,7 +61,7 @@ const UPPoliceResultDialog = ({ isOpen, onClose, result }: UPPoliceResultDialogP
     return testData.content;
   }, [testData?.content, result?.word_limit_used]);
 
-  // Compute word comparison using LCS algorithm with limited content
+  // Compute word comparison using LCS algorithm
   const comparison: ComparisonResult | null = useMemo(() => {
     if (!limitedContent || !result?.typed_text) return null;
     return compareWords(limitedContent, result.typed_text);
@@ -222,7 +226,7 @@ const UPPoliceResultDialog = ({ isOpen, onClose, result }: UPPoliceResultDialogP
       <!DOCTYPE html>
       <html>
         <head>
-          <title>UP Police Typing Test Result</title>
+          <title>Standard Typing Test Result</title>
           ${styles}
         </head>
         <body>
@@ -230,7 +234,7 @@ const UPPoliceResultDialog = ({ isOpen, onClose, result }: UPPoliceResultDialogP
             <div class="header-grid">
               <div class="header-item">
                 <p>Exam Title</p>
-                <p>UP Police SI/ASI/Computer Operator ${result.typing_tests?.language || 'English'} Typing</p>
+                <p>Standard Typing Test - ${result.typing_tests?.language || 'English'}</p>
               </div>
               <div class="header-item">
                 <p>Total Words Given</p>
@@ -264,7 +268,7 @@ const UPPoliceResultDialog = ({ isOpen, onClose, result }: UPPoliceResultDialogP
             </div>
             <div class="stat-card">
               <div class="value" style="color: #dc2626;">${stats.totalErrors}</div>
-              <div class="label">Full Mistake</div>
+              <div class="label">Total Errors</div>
             </div>
             <div class="stat-card">
               <div class="value" style="color: #ef4444;">${stats.wrongWords}</div>
@@ -279,45 +283,37 @@ const UPPoliceResultDialog = ({ isOpen, onClose, result }: UPPoliceResultDialogP
           <div class="stats-grid">
             <div class="stat-card">
               <div class="value">${Number(grossSpeed).toFixed(2)}</div>
-              <div class="label">Gross Speed (min. ${minSpeed})</div>
+              <div class="label">Gross Speed (WPM)</div>
             </div>
             <div class="stat-card">
               <div class="value">${Number(netSpeed).toFixed(2)}</div>
-              <div class="label">Net Speed (wpm)</div>
+              <div class="label">Net Speed (WPM)</div>
             </div>
             <div class="stat-card">
               <div class="value">${backspaceCount}</div>
               <div class="label">Backspace Count</div>
             </div>
+            ${showQualificationStatus ? `
             <div class="stat-card ${isPassed ? 'qualified' : 'not-qualified'}">
               <div class="value" style="color: ${isPassed ? '#16a34a' : '#dc2626'};">${isPassed ? 'Qualified' : 'Not Qualified'}</div>
               <div class="label">Status</div>
             </div>
+            ` : `
+            <div class="stat-card">
+              <div class="value" style="color: #4F46E5;">${stats.correctWords}</div>
+              <div class="label">Correct Words</div>
+            </div>
+            `}
           </div>
 
-          <div class="stats-grid" style="grid-template-columns: repeat(2, 1fr);">
+          <div class="stats-grid">
             <div class="stat-card">
               <div class="value" style="color: #2563eb;">${keystrokeGrossSpeed.toFixed(2)}</div>
-              <div class="label">Gross Typing Speed (5 keys = 1 word)</div>
+              <div class="label">Gross Speed (5 keys = 1 word)</div>
             </div>
             <div class="stat-card">
               <div class="value" style="color: #059669;">${keystrokeNetSpeed.toFixed(2)}</div>
-              <div class="label">Net Typing Speed (5 keys = 1 word)</div>
-            </div>
-          </div>
-
-          <div class="stats-grid" style="grid-template-columns: repeat(5, 1fr);">
-            <div class="stat-card">
-              <div class="value" style="color: #16a34a;">${stats.correctWords}</div>
-              <div class="label">Correct Words</div>
-            </div>
-            <div class="stat-card">
-              <div class="value" style="color: #8b5cf6;">${stats.skippedWords}</div>
-              <div class="label">Skipped Words</div>
-            </div>
-            <div class="stat-card">
-              <div class="value" style="color: #f97316;">${stats.extraWords}</div>
-              <div class="label">Extra Words</div>
+              <div class="label">Net Speed (5 keys = 1 word)</div>
             </div>
             <div class="stat-card">
               <div class="value">${totalKeystrokes}</div>
@@ -349,33 +345,6 @@ const UPPoliceResultDialog = ({ isOpen, onClose, result }: UPPoliceResultDialogP
             </div>
           ` : ''}
 
-          <div class="section">
-            <div class="section-header">Accuracy Calculation (शुद्धता का निर्धारण)</div>
-            <div class="section-content" style="text-align: center;">
-              <p><strong>शुद्धता = (अभ्यर्थी द्वारा टंकित शुद्ध शब्दों की संख्या × 100) ÷ दिए गए गद्यांश के कुल शब्दों की संख्या</strong></p>
-              <p>Accuracy = (Correct Words Typed × 100) ÷ Total Words in Passage</p>
-              <p style="color: #4F46E5; font-weight: bold;">= (${stats.correctWords} × 100) ÷ ${stats.totalWords} = ${stats.accuracy}%</p>
-            </div>
-          </div>
-
-          <div class="section">
-            <div class="section-header">Qualification Criteria (उत्तीर्ण मानदंड)</div>
-            <div class="section-content">
-              <p>To qualify the typing test, candidate must achieve:</p>
-              <ul style="margin-left: 20px;">
-                <li><strong>Minimum 85% Accuracy</strong> (न्यूनतम 85% शुद्धता)</li>
-                <li><strong>For English: Minimum 30 WPM Gross Speed</strong></li>
-                <li><strong>For Hindi: Minimum 25 WPM Gross Speed</strong></li>
-              </ul>
-              <div style="margin-top: 10px; padding: 8px; border-radius: 6px; text-align: center; background: ${isPassed ? '#dcfce7' : '#fee2e2'}; border: 1px solid ${isPassed ? '#22c55e' : '#ef4444'};">
-                <p><strong>Your Result: Accuracy = ${stats.accuracy}% | Gross Speed = ${Number(grossSpeed).toFixed(2)} WPM</strong></p>
-                <p style="color: ${isPassed ? '#16a34a' : '#dc2626'}; font-weight: bold;">
-                  ${isPassed ? '✓ You have QUALIFIED the typing test!' : '✗ You have NOT QUALIFIED the typing test.'}
-                </p>
-              </div>
-            </div>
-          </div>
-
           <div class="footer">
             <p>Generated from TypeScribe Zen | ${new Date().toLocaleString()}</p>
           </div>
@@ -392,7 +361,10 @@ const UPPoliceResultDialog = ({ isOpen, onClose, result }: UPPoliceResultDialogP
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-7xl max-h-[95vh] overflow-hidden p-0">
         <DialogHeader className="p-4 pb-0 flex flex-row items-center justify-between">
-          <DialogTitle className="text-lg">UP Police Typing Test Result</DialogTitle>
+          <DialogTitle className="text-lg flex items-center gap-2">
+            <Trophy className="h-5 w-5 text-primary" />
+            Standard Typing Test Result
+          </DialogTitle>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={handlePrint}>
               <Printer className="h-4 w-4 mr-1" />
@@ -411,7 +383,7 @@ const UPPoliceResultDialog = ({ isOpen, onClose, result }: UPPoliceResultDialogP
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <p className="text-xs text-primary-foreground/70">Exam Title</p>
-                  <p className="font-bold">UP Police SI/ASI/Computer Operator {result.typing_tests?.language || 'English'} Typing</p>
+                  <p className="font-bold">Standard Typing Test - {result.typing_tests?.language || 'English'}</p>
                 </div>
                 <div>
                   <p className="text-xs text-primary-foreground/70">Total Words Given</p>
@@ -438,28 +410,32 @@ const UPPoliceResultDialog = ({ isOpen, onClose, result }: UPPoliceResultDialogP
               </div>
             </div>
 
-            {/* Stats Cards - Row 1 */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {/* Stats Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
               <StatCard label="Total Words Typed" value={actualTypedWords} icon={Keyboard} />
-              <StatCard label="Full Mistake" value={stats.totalErrors} icon={XCircle} valueColor="text-destructive" />
+              <StatCard label="Total Errors" value={stats.totalErrors} icon={XCircle} valueColor="text-destructive" />
               <StatCard label="Wrong Words" value={stats.wrongWords} icon={XOctagon} valueColor="text-red-500" />
-              <StatCard label="Accuracy %" value={stats.accuracy} icon={Percent} valueColor="text-primary" />
-              <StatCard label={`Gross Speed (min. ${minSpeed})`} value={Number(grossSpeed).toFixed(2)} icon={Gauge} />
-              <StatCard label="Net Speed (wpm)" value={Number(netSpeed).toFixed(2)} icon={Gauge} />
+              <StatCard label="Accuracy %" value={`${stats.accuracy}`} icon={Percent} valueColor="text-primary" />
+              <StatCard label="Gross Speed (WPM)" value={Number(grossSpeed).toFixed(2)} icon={Gauge} />
+              <StatCard label="Net Speed (WPM)" value={Number(netSpeed).toFixed(2)} icon={Gauge} />
               <StatCard label="Backspace Count" value={backspaceCount} icon={Delete} />
-              <div className={`border rounded-xl p-4 flex items-center justify-between gap-3 ${isPassed ? 'bg-green-500/10 border-green-500' : 'bg-destructive/10 border-destructive'}`}>
-                <div>
-                  <p className="text-xs sm:text-sm text-muted-foreground">Status</p>
-                  <p className={`text-xl sm:text-2xl font-bold ${isPassed ? 'text-green-600' : 'text-destructive'}`}>
-                    {isPassed ? 'Qualified' : 'Not Qualified'}
-                  </p>
+              {showQualificationStatus ? (
+                <div className={`border rounded-xl p-4 flex items-center justify-between gap-3 ${isPassed ? 'bg-green-500/10 border-green-500' : 'bg-destructive/10 border-destructive'}`}>
+                  <div>
+                    <p className="text-xs sm:text-sm text-muted-foreground">Status</p>
+                    <p className={`text-xl sm:text-2xl font-bold ${isPassed ? 'text-green-600' : 'text-destructive'}`}>
+                      {isPassed ? 'Qualified' : 'Not Qualified'}
+                    </p>
+                  </div>
+                  {isPassed ? <CheckCircle className="h-6 w-6 sm:h-8 sm:w-8 text-green-600" /> : <Target className="h-6 w-6 sm:h-8 sm:w-8 text-destructive" />}
                 </div>
-                {isPassed ? <CheckCircle className="h-6 w-6 sm:h-8 sm:w-8 text-green-600" /> : <Target className="h-6 w-6 sm:h-8 sm:w-8 text-destructive" />}
-              </div>
+              ) : (
+                <StatCard label="Correct Words" value={stats.correctWords} icon={CheckCircle} valueColor="text-green-600" />
+              )}
             </div>
 
             {/* Keystroke-based Speed Row */}
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-2 gap-3 sm:gap-4">
               <StatCard 
                 label="Gross Typing Speed (5 keys = 1 word)" 
                 value={keystrokeGrossSpeed.toFixed(2)} 
@@ -475,7 +451,7 @@ const UPPoliceResultDialog = ({ isOpen, onClose, result }: UPPoliceResultDialogP
             </div>
 
             {/* Additional Stats Row */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 sm:gap-4">
               <StatCard label="Correct Words" value={stats.correctWords} icon={CheckCircle} valueColor="text-green-600" />
               <StatCard label="Skipped Words" value={stats.skippedWords} icon={Hash} valueColor="text-violet-500" />
               <StatCard label="Extra Words" value={stats.extraWords} icon={Hash} valueColor="text-orange-500" />
@@ -489,22 +465,28 @@ const UPPoliceResultDialog = ({ isOpen, onClose, result }: UPPoliceResultDialogP
                 <h4 className="font-bold text-primary-foreground p-4 text-center text-lg bg-primary">
                   Paragraph Comparison
                 </h4>
+                {/* Headers */}
                 <div className="grid grid-cols-2 bg-secondary border-b border-border">
-                  <div className="p-3 text-center font-bold text-foreground border-r border-border text-sm italic">
+                  <div className="p-3 text-center font-bold text-foreground border-r border-border text-sm sm:text-base italic">
                     Question Paragraph
                   </div>
-                  <div className="p-3 text-center font-bold text-foreground text-sm italic">
+                  <div className="p-3 text-center font-bold text-foreground text-sm sm:text-base italic">
                     Result Paragraph
                   </div>
                 </div>
+                
+                {/* Content */}
                 <div className="grid grid-cols-2">
-                  <div className="p-4 border-r border-border bg-background max-h-[400px] overflow-y-auto">
-                    <div className="text-sm leading-loose text-justify">
+                  {/* Original Paragraph */}
+                  <div className="p-4 border-r border-border bg-background max-h-96 overflow-y-auto">
+                    <div className="text-sm sm:text-base leading-loose text-justify">
                       {limitedContent}
                     </div>
                   </div>
-                  <div className="p-4 bg-background max-h-[400px] overflow-y-auto">
-                    <div className="text-sm leading-loose text-justify">
+
+                  {/* Typed Paragraph */}
+                  <div className="p-4 bg-background max-h-96 overflow-y-auto">
+                    <div className="text-sm sm:text-base leading-loose text-justify">
                       {renderTypedText()}
                     </div>
                   </div>
@@ -522,86 +504,6 @@ const UPPoliceResultDialog = ({ isOpen, onClose, result }: UPPoliceResultDialogP
                 <span><span className="text-orange-500 line-through">Orange Strikethrough</span> = Extra word</span>
               </div>
             </div>
-
-            {/* Accuracy Formula */}
-            <div className="bg-secondary/50 border border-border rounded-xl overflow-hidden">
-              <h4 className="font-bold text-primary-foreground p-4 text-center bg-primary">
-                Accuracy Calculation (शुद्धता का निर्धारण)
-              </h4>
-              <div className="text-center text-sm p-4">
-                <p className="font-semibold">
-                  शुद्धता = (अभ्यर्थी द्वारा टंकित शुद्ध शब्दों की संख्या × 100) ÷ दिए गए गद्यांश के कुल शब्दों की संख्या
-                </p>
-                <p className="mt-2">
-                  Accuracy = (Correct Words Typed × 100) ÷ Total Words in Passage
-                </p>
-                <p className="mt-2 text-primary font-bold">
-                  = ({stats.correctWords} × 100) ÷ {stats.totalWords} = {stats.accuracy}%
-                </p>
-              </div>
-            </div>
-
-            {/* Qualification Criteria */}
-            <div className="bg-secondary/50 border border-border rounded-xl overflow-hidden">
-              <h4 className="font-bold text-primary-foreground p-4 text-center bg-primary">
-                Qualification Criteria (उत्तीर्ण मानदंड)
-              </h4>
-              <div className="text-sm space-y-2 p-4">
-                <p>To qualify the typing test, candidate must achieve:</p>
-                <ul className="list-disc list-inside ml-4 space-y-1">
-                  <li><strong>Minimum 85% Accuracy</strong> (न्यूनतम 85% शुद्धता)</li>
-                  <li><strong>For English: Minimum 30 WPM Gross Speed</strong> (अंग्रेजी के लिए न्यूनतम 30 शब्द प्रति मिनट गति)</li>
-                  <li><strong>For Hindi: Minimum 25 WPM Gross Speed</strong> (हिंदी के लिए न्यूनतम 25 शब्द प्रति मिनट गति)</li>
-                </ul>
-                <p className="mt-2 text-muted-foreground">
-                  Current Test: <strong>{result.typing_tests?.language || 'English'}</strong> - Required Speed: <strong>{minSpeed} WPM</strong>
-                </p>
-                <div className={`mt-3 p-3 rounded-lg ${isPassed ? 'bg-green-500/10 border border-green-500' : 'bg-destructive/10 border border-destructive'}`}>
-                  <p className="font-bold text-center">
-                    Your Result: Accuracy = {stats.accuracy}% | Gross Speed = {Number(grossSpeed).toFixed(2)} WPM
-                  </p>
-                  <p className={`text-center font-bold mt-1 ${isPassed ? 'text-green-600' : 'text-destructive'}`}>
-                    {isPassed ? '✓ You have QUALIFIED the typing test!' : '✗ You have NOT QUALIFIED the typing test.'}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Error Rules */}
-            <div className="bg-secondary/50 border border-border rounded-xl overflow-hidden">
-              <h4 className="font-bold text-primary-foreground p-4 text-center bg-primary">
-                अशुद्धियों का चिन्हांकन तथा शुद्धता का निर्धारण (Nature of Mistakes)
-              </h4>
-              <div className="text-xs sm:text-sm space-y-2 p-4">
-                <p className="font-semibold text-destructive">Full Mistakes - निम्नलिखित त्रुटियों को पूर्ण गलती माना जाता है:</p>
-                <ol className="list-decimal list-inside space-y-1 ml-4">
-                  <li>
-                    <span className="text-violet-500 font-semibold">Omission (छोड़ना)</span> - For every omission of a word/figure.
-                    <br/><span className="text-muted-foreground ml-6">प्रत्येक शब्द/अंक के छूटने पर।</span>
-                  </li>
-                  <li>
-                    <span className="text-red-500 font-semibold">Substitution (प्रतिस्थापन)</span> - For every substitution of a wrong word/figure, except transposition of words.
-                    <br/><span className="text-muted-foreground ml-6">शब्दों के क्रम में बदलाव को छोड़कर, प्रत्येक गलत शब्द/अंक के प्रतिस्थापन पर।</span>
-                  </li>
-                  <li>
-                    <span className="text-orange-500 font-semibold">Addition (जोड़ना)</span> - For every addition of a word/figure not found in the passage.
-                    <br/><span className="text-muted-foreground ml-6">गद्यांश में न पाए जाने वाले प्रत्येक शब्द/अंक के जोड़ने पर।</span>
-                  </li>
-                  <li>
-                    <span className="text-red-500 font-semibold">Spelling Error (वर्तनी त्रुटि)</span> - For every spelling error committed by way of repetition, addition, omission, or substitution of letter/letters.
-                    <br/><span className="text-muted-foreground ml-6">अक्षर/अक्षरों की पुनरावृत्ति, जोड़, छूट, या प्रतिस्थापन द्वारा की गई प्रत्येक वर्तनी त्रुटि पर।</span>
-                  </li>
-                  <li>
-                    <span className="text-red-500 font-semibold">Repetition (दोहराव)</span> - For repetition of word/figure.
-                    <br/><span className="text-muted-foreground ml-6">शब्द/अंक के दोहराव पर।</span>
-                  </li>
-                  <li>
-                    <span className="text-red-500 font-semibold">Incomplete Words (अधूरे शब्द)</span> - Half typed words will be treated as mistake.
-                    <br/><span className="text-muted-foreground ml-6">आधे टाइप किए गए शब्दों को गलती माना जाएगा।</span>
-                  </li>
-                </ol>
-              </div>
-            </div>
           </div>
         </ScrollArea>
       </DialogContent>
@@ -609,4 +511,4 @@ const UPPoliceResultDialog = ({ isOpen, onClose, result }: UPPoliceResultDialogP
   );
 };
 
-export default UPPoliceResultDialog;
+export default StandardResultDialog;

@@ -25,6 +25,7 @@ import { useQuery } from '@tanstack/react-query';
 import { compareWords, ComparisonResult } from '@/utils/wordComparison';
 import { getExamConfig, getExamShortName, isQualified as checkQualification, type ExamType } from '@/config/examConfig';
 import UPPoliceResultDialog from './UPPoliceResultDialog';
+import StandardResultDialog from './StandardResultDialog';
 
 interface TestResultDetailDialogProps {
   isOpen: boolean;
@@ -35,9 +36,26 @@ interface TestResultDetailDialogProps {
 const TestResultDetailDialog = ({ isOpen, onClose, result }: TestResultDetailDialogProps) => {
   const printRef = useRef<HTMLDivElement>(null);
   
-  // Determine if this is a UP Police exam result
+  // Determine exam type
   const examType = (result?.exam_type || 'all_exam') as ExamType;
   const isUPPoliceExam = examType === 'up_police';
+  const isStandardExam = examType === 'all_exam';
+  
+  // Fetch exam config from database to check show_qualification_status
+  const { data: dbExamConfig } = useQuery({
+    queryKey: ['exam-config-db', examType],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('exams')
+        .select('show_qualification_status')
+        .eq('slug', examType)
+        .maybeSingle();
+      
+      if (error) return null;
+      return data;
+    },
+    enabled: isOpen && !!result
+  });
   
   // Fetch the test content for paragraph comparison
   // IMPORTANT: All hooks must be called before any conditional returns
@@ -54,7 +72,7 @@ const TestResultDetailDialog = ({ isOpen, onClose, result }: TestResultDetailDia
       if (error) throw error;
       return data;
     },
-    enabled: !!result?.test_id && isOpen && !isUPPoliceExam
+    enabled: !!result?.test_id && isOpen && !isUPPoliceExam && !isStandardExam
   });
 
   // Compute word comparison using LCS algorithm - must be after useQuery but before early return
@@ -70,6 +88,22 @@ const TestResultDetailDialog = ({ isOpen, onClose, result }: TestResultDetailDia
         isOpen={isOpen}
         onClose={onClose}
         result={result}
+      />
+    );
+  }
+
+  // For Standard exam (all_exam), render StandardResultDialog
+  if (isStandardExam && result) {
+    // Determine if qualification status should be shown
+    // Default to false for standard exams unless explicitly set
+    const showQualification = dbExamConfig?.show_qualification_status ?? false;
+    
+    return (
+      <StandardResultDialog
+        isOpen={isOpen}
+        onClose={onClose}
+        result={result}
+        showQualificationStatus={showQualification}
       />
     );
   }
