@@ -285,8 +285,23 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
       const languageCode = selectedLanguage === 'english' ? 1 : 3;
       const dateString = format(selectedDate, 'yyyy-M-d');
       
+      // Generate signature for protected API
+      const SECRET_KEY = import.meta.env.VITE_SECRETE_KEY || '';
+      const urlPath = `/?language=${languageCode}&created_at=${dateString}`;
+      const timestamp = Math.floor(Date.now() / 1000);
+      
+      // Import and use the signature generator
+      const { generateApiSignature } = await import('@/utils/apiSignature');
+      const { signature, timestamp: ts } = generateApiSignature(urlPath, SECRET_KEY);
+      
       const response = await fetch(
-        `https://typingdata.testingsd9.workers.dev?language=${languageCode}&created_at=${dateString}`
+        `https://typingdata.testingsd9.workers.dev?language=${languageCode}&created_at=${dateString}`,
+        {
+          headers: {
+            'X-Signature': signature,
+            'X-Timestamp': ts
+          }
+        }
       );
       
       if (!response.ok) throw new Error('Failed to fetch daily tests');
