@@ -2,7 +2,7 @@
 // This file defines all exam types, their rules, qualification criteria,
 // and result calculation methods. Each exam is fully independent.
 
-export type ExamType = 'all_exam' | 'up_police' | 'ssc_cgl' | 'rrb_ntpc' | 'custom';
+export type ExamType = 'all_exam' | 'up_police' | 'upsssc_junior_assistant' | 'ssc_cgl' | 'rrb_ntpc' | 'custom';
 
 export interface ExamQualificationCriteria {
   minAccuracy: number;
@@ -138,6 +138,37 @@ export const SSC_CGL_CONFIG: ExamConfig = {
   showAccuracyFormula: true,
 };
 
+// UPSSSC Junior Assistant Exam Configuration
+export const UPSSSC_JUNIOR_ASSISTANT_CONFIG: ExamConfig = {
+  id: 'upsssc_junior_assistant',
+  name: 'upsssc_junior_assistant',
+  displayName: 'UPSSSC Junior Assistant Typing Test',
+  shortName: 'UPSSSC JA',
+  description: 'UPSSSC Junior Assistant/Clerk typing test with 5-minute duration and keystroke-based speed',
+  defaultTimeLimit: 300, // 5 minutes
+  qualificationCriteria: {
+    minAccuracy: 85,
+    minSpeedEnglish: 30,
+    minSpeedHindi: 25,
+    useKeystrokeSpeed: true, // 5 keystrokes = 1 word
+  },
+  hasCustomInterface: true,
+  interfaceTheme: 'default',
+  showBackspaceCount: true,
+  showGrossNetSpeed: true,
+  showKeystrokeSpeed: true,
+  enableSound: true,
+  enableFontSizeControl: true,
+  enableWordLimit: false,
+  defaultWordLimit: { english: 500, hindi: 400 },
+  showSkippedWords: true,
+  showExtraWords: true,
+  showQualificationStatus: true,
+  showComparisonParagraph: true,
+  showErrorRules: true,
+  showAccuracyFormula: true,
+};
+
 // RRB NTPC Exam Configuration (Future use)
 export const RRB_NTPC_CONFIG: ExamConfig = {
   id: 'rrb_ntpc',
@@ -173,6 +204,7 @@ export const RRB_NTPC_CONFIG: ExamConfig = {
 export const EXAM_CONFIGS: Record<ExamType, ExamConfig> = {
   all_exam: ALL_EXAM_CONFIG,
   up_police: UP_POLICE_CONFIG,
+  upsssc_junior_assistant: UPSSSC_JUNIOR_ASSISTANT_CONFIG,
   ssc_cgl: SSC_CGL_CONFIG,
   rrb_ntpc: RRB_NTPC_CONFIG,
   custom: ALL_EXAM_CONFIG, // Custom uses same config as all_exam
@@ -188,9 +220,26 @@ export const getAvailableExams = (): ExamConfig[] => {
   return [
     ALL_EXAM_CONFIG,
     UP_POLICE_CONFIG,
+    UPSSSC_JUNIOR_ASSISTANT_CONFIG,
     // SSC_CGL_CONFIG, // Uncomment when ready
     // RRB_NTPC_CONFIG, // Uncomment when ready
   ];
+};
+
+// UPSSSC-specific calculation helpers
+export const calculateUPSSSCSpeed = (
+  totalKeystrokes: number,
+  totalErrors: number,
+  timeInMinutes: number,
+  admissibleErrors: number = 5,
+  penaltyPerError: number = 5
+): { grossWords: number; penalty: number; netCorrectWords: number; finalSpeed: number } => {
+  const grossWords = totalKeystrokes / 5;
+  const excessErrors = Math.max(0, totalErrors - admissibleErrors);
+  const penalty = excessErrors * penaltyPerError;
+  const netCorrectWords = Math.max(0, grossWords - penalty);
+  const finalSpeed = timeInMinutes > 0 ? netCorrectWords / timeInMinutes : 0;
+  return { grossWords, penalty, netCorrectWords, finalSpeed };
 };
 
 // Calculate qualification status based on exam config

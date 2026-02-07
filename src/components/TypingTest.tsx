@@ -19,6 +19,7 @@ import { processText } from '@/utils/textNormalization';
 import { compareWords, ComparisonResult } from '@/utils/wordComparison';
 import UPPoliceResults from './UPPoliceResults';
 import StandardResults from './StandardResults';
+import UPSSSCTypingTest from './UPSSSCTypingTest';
 import ntaLogo from '@/assets/NTA_logo_1.png';
 
 interface TypingTest {
@@ -1140,13 +1141,24 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
   }
 
   // Standard Results Display
-  if (standardResult && standardComparison && selectedTest && selectedExamType !== 'up_police') {
+  if (standardResult && standardComparison && selectedTest && selectedExamType !== 'up_police' && selectedExamType !== 'upsssc_junior_assistant') {
     return (
       <StandardResults
         result={standardResult}
         comparison={standardComparison}
         originalText={words.join(' ')}
         testDuration={selectedTest.time_limit}
+        onStartNewTest={resetTest}
+      />
+    );
+  }
+
+  // UPSSSC Junior Assistant Typing Test - completely separate interface
+  if (selectedExamType === 'upsssc_junior_assistant' && !showSettings && selectedTest) {
+    return (
+      <UPSSSCTypingTest
+        selectedTest={selectedTest}
+        words={words}
         onStartNewTest={resetTest}
       />
     );
@@ -1829,7 +1841,7 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
                   </Label>
                   <Select
                     value={selectedExamType}
-                    onValueChange={(value: 'all_exam' | 'up_police') => setSelectedExamType(value)}
+                    onValueChange={(value: string) => setSelectedExamType(value)}
                   >
                     <SelectTrigger className="border-2">
                       <SelectValue placeholder="Select exam type" />
@@ -1837,11 +1849,14 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
                     <SelectContent>
                       <SelectItem value="all_exam">📝 All Exam (Standard)</SelectItem>
                       <SelectItem value="up_police">🚔 UP Police SI/ASI, Computer Operator</SelectItem>
+                      <SelectItem value="upsssc_junior_assistant">📋 UPSSSC Junior Assistant</SelectItem>
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground">
                     {selectedExamType === 'up_police' 
-                      ? 'Uses UP Police exam rules: 85% accuracy + min speed (30 WPM English / 25 WPM Hindi) required' 
+                      ? 'UP Police: 85% accuracy + min speed (30 WPM English / 25 WPM Hindi)' 
+                      : selectedExamType === 'upsssc_junior_assistant'
+                      ? 'UPSSSC JA: 5 min, 5 keystrokes=1 word, 5 admissible errors, 5-word penalty per extra error'
                       : 'Standard typing test with keystroke-based accuracy'}
                   </p>
                 </div>
