@@ -8,6 +8,9 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Calendar } from '@/components/ui/calendar';
+import { format } from 'date-fns';
 import { 
   Trophy, 
   Target, 
@@ -27,7 +30,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Search,
-  Filter
+  Filter,
+  Calendar as CalendarIcon
 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
@@ -74,12 +78,18 @@ interface ResultsProps {
 
 const ITEMS_PER_PAGE = 10;
 
+type DateFilterType = 'all_time' | 'today' | 'week' | 'month' | 'custom';
+
 const Results = ({ results }: ResultsProps) => {
   const [showLatestResult, setShowLatestResult] = React.useState(false);
   const [currentPage, setCurrentPage] = React.useState(1);
   const [selectedResultForDetails, setSelectedResultForDetails] = React.useState<any>(null);
   const [historySearch, setHistorySearch] = React.useState('');
   const [examTypeFilter, setExamTypeFilter] = React.useState<string>('all');
+  const [languageFilter, setLanguageFilter] = React.useState<string>('all');
+  const [dateFilter, setDateFilter] = React.useState<DateFilterType>('all_time');
+  const [customDateStart, setCustomDateStart] = React.useState<Date | undefined>(undefined);
+  const [customDateEnd, setCustomDateEnd] = React.useState<Date | undefined>(undefined);
 
   const availableExams = getAvailableExams();
   
@@ -133,13 +143,53 @@ const Results = ({ results }: ResultsProps) => {
     }
   });
 
-  // Filter history based on search and exam type
+  // Get date range based on filter
+  const getDateRange = React.useCallback(() => {
+    const now = new Date();
+    switch (dateFilter) {
+      case 'today':
+        const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        return { start: todayStart, end: now };
+      case 'week':
+        const weekStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        return { start: weekStart, end: now };
+      case 'month':
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        return { start: monthStart, end: now };
+      case 'custom':
+        if (customDateStart && customDateEnd) {
+          const dayEnd = new Date(customDateEnd.getFullYear(), customDateEnd.getMonth(), customDateEnd.getDate(), 23, 59, 59);
+          return { start: customDateStart, end: dayEnd };
+        }
+        return null;
+      default:
+        return null;
+    }
+  }, [dateFilter, customDateStart, customDateEnd]);
+
+  // Filter history based on search, exam type, language, and date
   const filteredHistory = React.useMemo(() => {
     let filtered = testHistory;
+    
+    // Filter by date range
+    const dateRange = getDateRange();
+    if (dateRange) {
+      filtered = filtered.filter((test: any) => {
+        const completedAt = new Date(test.completed_at);
+        return completedAt >= dateRange.start && completedAt <= dateRange.end;
+      });
+    }
     
     // Filter by exam type
     if (examTypeFilter !== 'all') {
       filtered = filtered.filter((test: any) => test.exam_type === examTypeFilter);
+    }
+    
+    // Filter by language
+    if (languageFilter !== 'all') {
+      filtered = filtered.filter((test: any) => 
+        test.typing_tests?.language?.toLowerCase() === languageFilter.toLowerCase()
+      );
     }
     
     // Filter by search query
@@ -153,7 +203,26 @@ const Results = ({ results }: ResultsProps) => {
     }
     
     return filtered;
-  }, [testHistory, historySearch, examTypeFilter]);
+  }, [testHistory, historySearch, examTypeFilter, languageFilter, getDateRange]);
+
+  // Calculate stats based on filtered history
+  const filteredStats = React.useMemo(() => {
+    if (filteredHistory.length === 0) {
+      return { bestWpm: 0, avgWpm: 0, avgAccuracy: 0, totalTests: 0, totalTime: 0, avgKeystrokes: 0 };
+    }
+    
+    const bestWpm = Math.max(...filteredHistory.map((t: any) => t.wpm || 0));
+    const avgWpm = filteredHistory.reduce((sum: number, t: any) => sum + (t.wpm || 0), 0) / filteredHistory.length;
+    const avgAccuracy = filteredHistory.reduce((sum: number, t: any) => sum + (t.accuracy || 0), 0) / filteredHistory.length;
+    const totalTests = filteredHistory.length;
+    const totalTime = filteredHistory.reduce((sum: number, t: any) => sum + (t.time_taken || 0), 0);
+    const avgKeystrokes = filteredHistory.reduce((sum: number, t: any) => {
+      const keystrokes = t.total_keystrokes || ((t.correct_keystrokes || 0) + (t.wrong_keystrokes || 0));
+      return sum + keystrokes;
+    }, 0) / filteredHistory.length;
+    
+    return { bestWpm, avgWpm, avgAccuracy, totalTests, totalTime, avgKeystrokes };
+  }, [filteredHistory]);
 
   // Pagination calculations based on filtered history
   const totalPages = Math.ceil(filteredHistory.length / ITEMS_PER_PAGE);
@@ -165,7 +234,7 @@ const Results = ({ results }: ResultsProps) => {
   // Reset page when search or filter changes
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [historySearch, examTypeFilter]);
+  }, [historySearch, examTypeFilter, languageFilter, dateFilter, customDateStart, customDateEnd]);
 
   const handleShowLatestResult = () => {
     if (results) {
@@ -190,12 +259,24 @@ const Results = ({ results }: ResultsProps) => {
 
       <TabsContent value="history" className="space-y-6">
         <Card>
-          <CardHeader className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <CardTitle className="flex items-center gap-2">
-              <History className="h-5 w-5" />
-              Test History
-            </CardTitle>
-            <div className="flex flex-col sm:flex-row gap-2 flex-wrap">
+          <CardHeader className="flex flex-col gap-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <CardTitle className="flex items-center gap-2">
+                <History className="h-5 w-5" />
+                Test History
+              </CardTitle>
+              {results && (
+                <Button 
+                  variant="outline" 
+                  onClick={handleShowLatestResult}
+                >
+                  View Latest Results
+                </Button>
+              )}
+            </div>
+            
+            {/* Filters Row */}
+            <div className="flex flex-wrap gap-2">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input 
@@ -208,7 +289,7 @@ const Results = ({ results }: ResultsProps) => {
               
               {/* Exam Type Filter */}
               <Select value={examTypeFilter} onValueChange={setExamTypeFilter}>
-                <SelectTrigger className="w-full sm:w-[160px]">
+                <SelectTrigger className="w-[160px]">
                   <Filter className="w-4 h-4 mr-2" />
                   <SelectValue placeholder="Exam Type" />
                 </SelectTrigger>
@@ -222,13 +303,67 @@ const Results = ({ results }: ResultsProps) => {
                 </SelectContent>
               </Select>
               
-              {results && (
-                <Button 
-                  variant="outline" 
-                  onClick={handleShowLatestResult}
-                >
-                  View Latest Results
-                </Button>
+              {/* Language Filter */}
+              <Select value={languageFilter} onValueChange={setLanguageFilter}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue placeholder="Language" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Languages</SelectItem>
+                  <SelectItem value="english">English</SelectItem>
+                  <SelectItem value="hindi">Hindi</SelectItem>
+                </SelectContent>
+              </Select>
+              
+              {/* Date Filter */}
+              <Select value={dateFilter} onValueChange={(v) => setDateFilter(v as DateFilterType)}>
+                <SelectTrigger className="w-[140px]">
+                  <CalendarIcon className="w-4 h-4 mr-2" />
+                  <SelectValue placeholder="Time Period" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all_time">All Time</SelectItem>
+                  <SelectItem value="today">Today</SelectItem>
+                  <SelectItem value="week">This Week</SelectItem>
+                  <SelectItem value="month">This Month</SelectItem>
+                  <SelectItem value="custom">Custom Range</SelectItem>
+                </SelectContent>
+              </Select>
+              
+              {/* Custom Date Range Pickers */}
+              {dateFilter === 'custom' && (
+                <>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="w-[130px]">
+                        {customDateStart ? format(customDateStart, "MMM d, yyyy") : "Start date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar
+                        mode="single"
+                        selected={customDateStart}
+                        onSelect={setCustomDateStart}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="w-[130px]">
+                        {customDateEnd ? format(customDateEnd, "MMM d, yyyy") : "End date"}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar
+                        mode="single"
+                        selected={customDateEnd}
+                        onSelect={setCustomDateEnd}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </>
               )}
             </div>
           </CardHeader>
@@ -239,53 +374,73 @@ const Results = ({ results }: ResultsProps) => {
               </div>
             ) : testHistory.length === 0 ? (
               <div className="text-center py-12">
-                <History className="h-16 w-16 mx-auto mb-4 text-gray-300 dark:text-gray-700" />
+                <History className="h-16 w-16 mx-auto mb-4 text-muted-foreground/50" />
                 <h3 className="text-lg font-semibold mb-2">No Test History</h3>
-                <p className="text-gray-500 dark:text-gray-400">
+                <p className="text-muted-foreground">
                   Complete some tests to see your history here
                 </p>
               </div>
             ) : (
               <div className="space-y-4">
-                {/* Summary Stats */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                {/* Summary Stats - Now based on filtered data */}
+                <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
                   <Card className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-950 dark:to-blue-900 border-blue-200 dark:border-blue-800">
-                    <CardContent className="p-4 text-center">
-                      <Trophy className="h-6 w-6 mx-auto mb-2 text-blue-600 dark:text-blue-400" />
-                      <div className="text-2xl font-bold text-blue-700 dark:text-blue-300">
-                        {testHistory.length > 0 ? Math.max(...testHistory.map((t: any) => t.wpm)) : 0}
+                    <CardContent className="p-3 text-center">
+                      <Trophy className="h-5 w-5 mx-auto mb-1 text-blue-600 dark:text-blue-400" />
+                      <div className="text-xl font-bold text-blue-700 dark:text-blue-300">
+                        {Math.round(filteredStats.bestWpm)}
                       </div>
                       <div className="text-xs text-blue-600 dark:text-blue-400">Best WPM</div>
                     </CardContent>
                   </Card>
                   
+                  <Card className="bg-gradient-to-br from-cyan-50 to-cyan-100 dark:from-cyan-950 dark:to-cyan-900 border-cyan-200 dark:border-cyan-800">
+                    <CardContent className="p-3 text-center">
+                      <Zap className="h-5 w-5 mx-auto mb-1 text-cyan-600 dark:text-cyan-400" />
+                      <div className="text-xl font-bold text-cyan-700 dark:text-cyan-300">
+                        {filteredStats.avgWpm.toFixed(1)}
+                      </div>
+                      <div className="text-xs text-cyan-600 dark:text-cyan-400">Avg WPM</div>
+                    </CardContent>
+                  </Card>
+                  
                   <Card className="bg-gradient-to-br from-green-50 to-green-100 dark:from-green-950 dark:to-green-900 border-green-200 dark:border-green-800">
-                    <CardContent className="p-4 text-center">
-                      <Target className="h-6 w-6 mx-auto mb-2 text-green-600 dark:text-green-400" />
-                      <div className="text-2xl font-bold text-green-700 dark:text-green-300">
-                        {testHistory.length > 0 ? (testHistory.reduce((sum: number, t: any) => sum + t.accuracy, 0) / testHistory.length).toFixed(1) : 0}%
+                    <CardContent className="p-3 text-center">
+                      <Target className="h-5 w-5 mx-auto mb-1 text-green-600 dark:text-green-400" />
+                      <div className="text-xl font-bold text-green-700 dark:text-green-300">
+                        {filteredStats.avgAccuracy.toFixed(1)}%
                       </div>
                       <div className="text-xs text-green-600 dark:text-green-400">Avg Accuracy</div>
                     </CardContent>
                   </Card>
                   
                   <Card className="bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-950 dark:to-purple-900 border-purple-200 dark:border-purple-800">
-                    <CardContent className="p-4 text-center">
-                      <BarChart3 className="h-6 w-6 mx-auto mb-2 text-purple-600 dark:text-purple-400" />
-                      <div className="text-2xl font-bold text-purple-700 dark:text-purple-300">
-                        {testHistory.length}
+                    <CardContent className="p-3 text-center">
+                      <BarChart3 className="h-5 w-5 mx-auto mb-1 text-purple-600 dark:text-purple-400" />
+                      <div className="text-xl font-bold text-purple-700 dark:text-purple-300">
+                        {filteredStats.totalTests}
                       </div>
                       <div className="text-xs text-purple-600 dark:text-purple-400">Total Tests</div>
                     </CardContent>
                   </Card>
                   
                   <Card className="bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-950 dark:to-orange-900 border-orange-200 dark:border-orange-800">
-                    <CardContent className="p-4 text-center">
-                      <Clock className="h-6 w-6 mx-auto mb-2 text-orange-600 dark:text-orange-400" />
-                      <div className="text-2xl font-bold text-orange-700 dark:text-orange-300">
-                        {testHistory.length > 0 ? Math.round(testHistory.reduce((sum: number, t: any) => sum + t.time_taken, 0) / 60) : 0}m
+                    <CardContent className="p-3 text-center">
+                      <Clock className="h-5 w-5 mx-auto mb-1 text-orange-600 dark:text-orange-400" />
+                      <div className="text-xl font-bold text-orange-700 dark:text-orange-300">
+                        {Math.round(filteredStats.totalTime / 60)}m
                       </div>
                       <div className="text-xs text-orange-600 dark:text-orange-400">Practice Time</div>
+                    </CardContent>
+                  </Card>
+                  
+                  <Card className="bg-gradient-to-br from-indigo-50 to-indigo-100 dark:from-indigo-950 dark:to-indigo-900 border-indigo-200 dark:border-indigo-800">
+                    <CardContent className="p-3 text-center">
+                      <Keyboard className="h-5 w-5 mx-auto mb-1 text-indigo-600 dark:text-indigo-400" />
+                      <div className="text-xl font-bold text-indigo-700 dark:text-indigo-300">
+                        {Math.round(filteredStats.avgKeystrokes)}
+                      </div>
+                      <div className="text-xs text-indigo-600 dark:text-indigo-400">Avg Keys</div>
                     </CardContent>
                   </Card>
                 </div>

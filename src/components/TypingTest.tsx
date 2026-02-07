@@ -695,8 +695,7 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
             net_speed: netSpeed,
             backspace_count: backspaceCount,
             is_qualified: isQualified,
-            typed_text: typedText,
-            word_limit_used: wordLimitEnabled ? wordLimit : null
+            typed_text: typedText
           }]);
           
         if (insertError) {
@@ -813,8 +812,7 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
           time_taken: results.timeTaken,
           exam_type: 'all_exam',
           backspace_count: backspaceCount,
-          typed_text: userInput,
-          word_limit_used: wordLimitEnabled ? wordLimit : null,
+          typed_text: typedText,
           skipped_words: stats.skippedWords,
           extra_words: stats.extraWords
         }]);
@@ -1909,38 +1907,71 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
         </Card>
       )}
 
-      {/* Test Statistics */}
+      {/* Test Settings Bar */}
       {(!showSettings && selectedTest) && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {/* Sound Toggle */}
           <Card>
-            <CardContent className="p-4 text-center">
-              <Clock className="h-6 w-6 mx-auto mb-2 text-blue-500" />
-              <div className="text-2xl font-bold">{formatTime(timeLeft)}</div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">remaining</div>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  {upPoliceSoundEnabled ? (
+                    <Volume2 className="h-5 w-5 text-primary" />
+                  ) : (
+                    <VolumeX className="h-5 w-5 text-muted-foreground" />
+                  )}
+                  <span className="text-sm font-medium">Sound</span>
+                </div>
+                <Switch
+                  checked={upPoliceSoundEnabled}
+                  onCheckedChange={setUpPoliceSoundEnabled}
+                />
+              </div>
             </CardContent>
           </Card>
           
+          {/* Highlight Toggle */}
           <Card>
-            <CardContent className="p-4 text-center">
-              <Zap className="h-6 w-6 mx-auto mb-2 text-yellow-500" />
-              <div className="text-2xl font-bold">{wpm}</div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">WPM</div>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Target className="h-5 w-5 text-primary" />
+                  <span className="text-sm font-medium">Highlight</span>
+                </div>
+                <Switch
+                  checked={testSettings.highlightText}
+                  onCheckedChange={(checked) => 
+                    setTestSettings({...testSettings, highlightText: checked})
+                  }
+                />
+              </div>
             </CardContent>
           </Card>
           
-          <Card>
-            <CardContent className="p-4 text-center">
-              <Target className="h-6 w-6 mx-auto mb-2 text-green-500" />
-              <div className="text-2xl font-bold">{Math.round(progress)}%</div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">Progress</div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardContent className="p-4 text-center">
-              <XCircle className="h-6 w-6 mx-auto mb-2 text-red-500" />
-              <div className="text-2xl font-bold">{wrongWords.size}</div>
-              <div className="text-sm text-gray-600 dark:text-gray-400">Wrong Words</div>
+          {/* Backspace Mode */}
+          <Card className="md:col-span-2">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Keyboard className="h-5 w-5 text-primary" />
+                  <span className="text-sm font-medium">Backspace</span>
+                </div>
+                <Select
+                  value={testSettings.backspaceMode}
+                  onValueChange={(value: 'full' | 'word' | 'disabled') => 
+                    setTestSettings({...testSettings, backspaceMode: value})
+                  }
+                >
+                  <SelectTrigger className="w-[140px] h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="full">Full</SelectItem>
+                    <SelectItem value="word">One Word</SelectItem>
+                    <SelectItem value="disabled">Disabled</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </CardContent>
           </Card>
         </div>

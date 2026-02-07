@@ -1,7 +1,7 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { ArrowRight, Keyboard, Target, Zap, Award } from 'lucide-react';
-import heroImage from '@/assets/hero-typing.jpg';
+import heroVideo from '@/assets/hero-video.mp4';
 
 interface HeroSectionProps {
   onExploreExams: () => void;
@@ -71,10 +71,13 @@ const HeroSection = ({ onExploreExams, isLoggedIn }: HeroSectionProps) => {
           {/* Right side - Hero image */}
           <div className="relative">
             <div className="relative z-10">
-              <img 
-                src={heroImage} 
-                alt="Typing practice illustration" 
-                className="w-full h-auto rounded-2xl shadow-2xl"
+              <video 
+                src={heroVideo} 
+                autoPlay
+                loop
+                muted
+                playsInline
+                className="w-full h-auto rounded-2xl shadow-2xl object-cover"
               />
               
               {/* Floating badges */}

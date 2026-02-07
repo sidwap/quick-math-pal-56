@@ -14,11 +14,15 @@ interface TestResult {
   completed_at: string;
   total_keystrokes?: number;
   is_qualified?: boolean;
+  gross_speed?: number;
+  net_speed?: number;
+  exam_type?: string;
   typing_tests?: {
     title: string;
     category: string;
     language: string;
     content?: string;
+    difficulty?: string;
   };
 }
 
@@ -35,6 +39,10 @@ interface TopUser {
   test_title?: string;
   total_keystrokes?: number;
   is_qualified?: boolean;
+  gross_speed?: number;
+  net_speed?: number;
+  exam_type?: string;
+  difficulty?: string;
 }
 
 // Configure jsPDF for UTF-8 support and load Devanagari font
@@ -148,77 +156,94 @@ export const generateUserTestHistoryPDF = async (userName: string, testHistory: 
     doc.text(`Average WPM: ${avgWpm.toFixed(1)} | Average Accuracy: ${avgAccuracy.toFixed(1)}% | Best WPM: ${bestWpm.toFixed(1)}`, 15, 64);
   }
   
-  // Prepare table data with qualification and keystrokes
+  // Get difficulty badge
+  const getDifficultyBadge = (difficulty?: string): string => {
+    if (!difficulty) return 'N/A';
+    const d = difficulty.toLowerCase();
+    if (d === 'hard' || d === 'h') return 'H';
+    if (d === 'medium' || d === 'm') return 'M';
+    if (d === 'easy' || d === 'e') return 'E';
+    return difficulty.charAt(0).toUpperCase();
+  };
+
+  // Prepare table data with all enhanced fields
   const tableData = testHistory.map((result, index) => [
     (index + 1).toString(),
     result.typing_tests?.title || 'Unknown Test',
-    result.typing_tests?.category || 'N/A',
+    result.exam_type || 'Standard',
     result.typing_tests?.language?.toUpperCase() || 'N/A',
+    getDifficultyBadge(result.typing_tests?.difficulty),
     Number(result.wpm).toFixed(1),
+    Number(result.gross_wpm || result.wpm).toFixed(1),
+    (result.gross_speed || 0).toFixed(1),
+    (result.net_speed || 0).toFixed(1),
     `${Number(result.accuracy).toFixed(1)}%`,
     formatTime(result.time_taken),
     result.total_words?.toString() || '0',
-    result.correct_words_count?.toString() || '0',
-    result.incorrect_words?.toString() || '0',
     (result.total_keystrokes || 0).toString(),
     getQualificationStatus(result),
     new Date(result.completed_at).toLocaleDateString()
   ]);
   
-  // Add table with font support for Hindi
+  // Add table with font support for Hindi - landscape for more columns
   autoTable(doc, {
     startY: 72,
-    head: [['#', 'Test Title', 'Category', 'Lang', 'WPM', 'Acc', 'Time', 'Words', 'Correct', 'Wrong', 'Keystrokes', 'Status', 'Date']],
+    head: [['#', 'Test', 'Exam', 'Lang', 'Diff', 'Net WPM', 'Gross WPM', 'Gross Spd', 'Net Spd', 'Acc', 'Time', 'Words', 'Keys', 'Status', 'Date']],
     body: tableData,
     theme: 'striped',
     headStyles: {
       fillColor: [99, 102, 241],
       textColor: [255, 255, 255],
-      fontSize: 7,
+      fontSize: 6,
       fontStyle: 'bold',
       halign: 'center'
     },
     bodyStyles: {
-      fontSize: 6
+      fontSize: 5.5
     },
     didParseCell: function(data) {
       // Use Devanagari font for Test Title column if it contains Hindi text
       if (data.column.index === 1 && data.cell.raw) {
         const text = data.cell.raw.toString();
-        // Check if text contains Devanagari characters (U+0900 to U+097F)
         if (/[\u0900-\u097F]/.test(text)) {
           data.cell.styles.font = 'NotoSansDevanagari';
         }
       }
-      // Color code qualification status
-      if (data.column.index === 11 && data.cell.raw) {
+      // Color code difficulty
+      if (data.column.index === 4 && data.cell.raw) {
         const text = data.cell.raw.toString();
-        if (text === 'Qualified') {
-          data.cell.styles.textColor = [22, 163, 74]; // Green
-        } else {
-          data.cell.styles.textColor = [220, 38, 38]; // Red
-        }
+        if (text === 'H') data.cell.styles.textColor = [220, 38, 38];
+        else if (text === 'M') data.cell.styles.textColor = [37, 99, 235];
+        else if (text === 'E') data.cell.styles.textColor = [22, 163, 74];
+      }
+      // Color code qualification status
+      if (data.column.index === 13 && data.cell.raw) {
+        const text = data.cell.raw.toString();
+        if (text === 'Qualified') data.cell.styles.textColor = [22, 163, 74];
+        else data.cell.styles.textColor = [220, 38, 38];
       }
     },
     alternateRowStyles: {
       fillColor: [248, 250, 252]
     },
     columnStyles: {
-      0: { cellWidth: 8, halign: 'center' },
-      1: { cellWidth: 24 },
-      2: { cellWidth: 16 },
+      0: { cellWidth: 7, halign: 'center' },
+      1: { cellWidth: 20 },
+      2: { cellWidth: 14 },
       3: { cellWidth: 10, halign: 'center' },
-      4: { cellWidth: 12, halign: 'center' },
-      5: { cellWidth: 10, halign: 'center' },
-      6: { cellWidth: 12, halign: 'center' },
-      7: { cellWidth: 12, halign: 'center' },
+      4: { cellWidth: 8, halign: 'center' },
+      5: { cellWidth: 12, halign: 'center' },
+      6: { cellWidth: 14, halign: 'center' },
+      7: { cellWidth: 13, halign: 'center' },
       8: { cellWidth: 12, halign: 'center' },
       9: { cellWidth: 10, halign: 'center' },
-      10: { cellWidth: 16, halign: 'center' },
-      11: { cellWidth: 20, halign: 'center' },
-      12: { cellWidth: 18, halign: 'center' }
+      10: { cellWidth: 11, halign: 'center' },
+      11: { cellWidth: 11, halign: 'center' },
+      12: { cellWidth: 11, halign: 'center' },
+      13: { cellWidth: 16, halign: 'center' },
+      14: { cellWidth: 16, halign: 'center' }
     },
-    margin: { left: 10, right: 10 }
+    margin: { left: 5, right: 5 }
   });
   
   // Add footer
@@ -255,15 +280,29 @@ export const generateTopUsersByDatePDF = async (date: string, topUsers: TopUser[
   doc.text(`Report Generated: ${new Date().toLocaleString()}`, 15, 58);
   doc.text('Qualification: 85%+ accuracy AND (10+ minutes OR 400+ words)', 15, 64);
   
-  // Prepare table data with test title, date, language, keystrokes, and status
+  // Get difficulty badge
+  const getDifficultyBadge = (difficulty?: string): string => {
+    if (!difficulty) return 'N/A';
+    const d = difficulty.toLowerCase();
+    if (d === 'hard' || d === 'h') return 'H';
+    if (d === 'medium' || d === 'm') return 'M';
+    if (d === 'easy' || d === 'e') return 'E';
+    return difficulty.charAt(0).toUpperCase();
+  };
+
+  // Prepare table data with all enhanced fields
   const tableData = topUsers.map((user, index) => [
     (index + 1).toString(),
     user.display_name,
     user.test_title || 'N/A',
+    user.exam_type || 'Standard',
+    (user.language || 'N/A').toUpperCase(),
+    getDifficultyBadge(user.difficulty),
     Number(user.wpm).toFixed(1),
+    (user.gross_speed || 0).toFixed(1),
+    (user.net_speed || 0).toFixed(1),
     `${Number(user.accuracy).toFixed(1)}%`,
     formatTime(user.time_taken),
-    user.total_words?.toString() || '0',
     (user.total_keystrokes || 0).toString(),
     getQualificationStatus(user),
     new Date(date).toLocaleDateString()
@@ -272,18 +311,18 @@ export const generateTopUsersByDatePDF = async (date: string, topUsers: TopUser[
   // Add table with Hindi font support
   autoTable(doc, {
     startY: 72,
-    head: [['Rank', 'User', 'Test', 'WPM', 'Acc', 'Time', 'Words', 'Keys', 'Status', 'Date']],
+    head: [['#', 'User', 'Test', 'Exam', 'Lang', 'Diff', 'Net WPM', 'Gross Spd', 'Net Spd', 'Acc', 'Time', 'Keys', 'Status', 'Date']],
     body: tableData,
     theme: 'striped',
     headStyles: {
       fillColor: [99, 102, 241],
       textColor: [255, 255, 255],
-      fontSize: 8,
+      fontSize: 6,
       fontStyle: 'bold',
       halign: 'center'
     },
     bodyStyles: {
-      fontSize: 7
+      fontSize: 5.5
     },
     didParseCell: function(data) {
       // Use Devanagari font for Test Title column (index 2) if it contains Hindi text
@@ -293,32 +332,40 @@ export const generateTopUsersByDatePDF = async (date: string, topUsers: TopUser[
           data.cell.styles.font = 'NotoSansDevanagari';
         }
       }
-      // Color code qualification status
-      if (data.column.index === 8 && data.cell.raw) {
+      // Color code difficulty
+      if (data.column.index === 5 && data.cell.raw) {
         const text = data.cell.raw.toString();
-        if (text === 'Qualified') {
-          data.cell.styles.textColor = [22, 163, 74];
-        } else {
-          data.cell.styles.textColor = [220, 38, 38];
-        }
+        if (text === 'H') data.cell.styles.textColor = [220, 38, 38];
+        else if (text === 'M') data.cell.styles.textColor = [37, 99, 235];
+        else if (text === 'E') data.cell.styles.textColor = [22, 163, 74];
+      }
+      // Color code qualification status
+      if (data.column.index === 12 && data.cell.raw) {
+        const text = data.cell.raw.toString();
+        if (text === 'Qualified') data.cell.styles.textColor = [22, 163, 74];
+        else data.cell.styles.textColor = [220, 38, 38];
       }
     },
     alternateRowStyles: {
       fillColor: [248, 250, 252]
     },
     columnStyles: {
-      0: { cellWidth: 12, halign: 'center' },
-      1: { cellWidth: 28 },
-      2: { cellWidth: 26 },
-      3: { cellWidth: 14, halign: 'center' },
-      4: { cellWidth: 14, halign: 'center' },
-      5: { cellWidth: 14, halign: 'center' },
+      0: { cellWidth: 8, halign: 'center' },
+      1: { cellWidth: 22 },
+      2: { cellWidth: 18 },
+      3: { cellWidth: 14 },
+      4: { cellWidth: 10, halign: 'center' },
+      5: { cellWidth: 8, halign: 'center' },
       6: { cellWidth: 14, halign: 'center' },
       7: { cellWidth: 14, halign: 'center' },
-      8: { cellWidth: 22, halign: 'center' },
-      9: { cellWidth: 18, halign: 'center' }
+      8: { cellWidth: 13, halign: 'center' },
+      9: { cellWidth: 10, halign: 'center' },
+      10: { cellWidth: 11, halign: 'center' },
+      11: { cellWidth: 11, halign: 'center' },
+      12: { cellWidth: 16, halign: 'center' },
+      13: { cellWidth: 16, halign: 'center' }
     },
-    margin: { left: 10, right: 10 }
+    margin: { left: 5, right: 5 }
   });
   
   // Add footer
@@ -354,15 +401,29 @@ export const generateAllTimeTopUsersPDF = async (topUsers: TopUser[]): Promise<j
   doc.text(`Report Generated: ${new Date().toLocaleString()}`, 15, 58);
   doc.text('Qualification: 85%+ accuracy AND (10+ minutes OR 400+ words)', 15, 64);
   
-  // Prepare table data with test title, date, language, keystrokes, and status
+  // Get difficulty badge
+  const getDifficultyBadge = (difficulty?: string): string => {
+    if (!difficulty) return 'N/A';
+    const d = difficulty.toLowerCase();
+    if (d === 'hard' || d === 'h') return 'H';
+    if (d === 'medium' || d === 'm') return 'M';
+    if (d === 'easy' || d === 'e') return 'E';
+    return difficulty.charAt(0).toUpperCase();
+  };
+
+  // Prepare table data with all enhanced fields
   const tableData = topUsers.map((user, index) => [
     (index + 1).toString(),
     user.display_name,
     user.test_title || 'N/A',
+    user.exam_type || 'Standard',
+    (user.language || 'N/A').toUpperCase(),
+    getDifficultyBadge(user.difficulty),
     Number(user.wpm).toFixed(1),
+    (user.gross_speed || 0).toFixed(1),
+    (user.net_speed || 0).toFixed(1),
     `${Number(user.accuracy).toFixed(1)}%`,
     formatTime(user.time_taken),
-    user.total_words?.toString() || '0',
     (user.total_keystrokes || 0).toString(),
     getQualificationStatus(user),
     user.completed_at ? new Date(user.completed_at).toLocaleDateString() : 'N/A'
@@ -371,18 +432,18 @@ export const generateAllTimeTopUsersPDF = async (topUsers: TopUser[]): Promise<j
   // Add table with Hindi font support
   autoTable(doc, {
     startY: 72,
-    head: [['Rank', 'User', 'Test', 'WPM', 'Acc', 'Time', 'Words', 'Keys', 'Status', 'Date']],
+    head: [['#', 'User', 'Test', 'Exam', 'Lang', 'Diff', 'Net WPM', 'Gross Spd', 'Net Spd', 'Acc', 'Time', 'Keys', 'Status', 'Date']],
     body: tableData,
     theme: 'striped',
     headStyles: {
       fillColor: [99, 102, 241],
       textColor: [255, 255, 255],
-      fontSize: 8,
+      fontSize: 6,
       fontStyle: 'bold',
       halign: 'center'
     },
     bodyStyles: {
-      fontSize: 7
+      fontSize: 5.5
     },
     didParseCell: function(data) {
       // Use Devanagari font for Test Title column (index 2) if it contains Hindi text
@@ -392,32 +453,40 @@ export const generateAllTimeTopUsersPDF = async (topUsers: TopUser[]): Promise<j
           data.cell.styles.font = 'NotoSansDevanagari';
         }
       }
-      // Color code qualification status
-      if (data.column.index === 8 && data.cell.raw) {
+      // Color code difficulty
+      if (data.column.index === 5 && data.cell.raw) {
         const text = data.cell.raw.toString();
-        if (text === 'Qualified') {
-          data.cell.styles.textColor = [22, 163, 74];
-        } else {
-          data.cell.styles.textColor = [220, 38, 38];
-        }
+        if (text === 'H') data.cell.styles.textColor = [220, 38, 38];
+        else if (text === 'M') data.cell.styles.textColor = [37, 99, 235];
+        else if (text === 'E') data.cell.styles.textColor = [22, 163, 74];
+      }
+      // Color code qualification status
+      if (data.column.index === 12 && data.cell.raw) {
+        const text = data.cell.raw.toString();
+        if (text === 'Qualified') data.cell.styles.textColor = [22, 163, 74];
+        else data.cell.styles.textColor = [220, 38, 38];
       }
     },
     alternateRowStyles: {
       fillColor: [248, 250, 252]
     },
     columnStyles: {
-      0: { cellWidth: 12, halign: 'center' },
-      1: { cellWidth: 28 },
-      2: { cellWidth: 26 },
-      3: { cellWidth: 14, halign: 'center' },
-      4: { cellWidth: 14, halign: 'center' },
-      5: { cellWidth: 14, halign: 'center' },
+      0: { cellWidth: 8, halign: 'center' },
+      1: { cellWidth: 22 },
+      2: { cellWidth: 18 },
+      3: { cellWidth: 14 },
+      4: { cellWidth: 10, halign: 'center' },
+      5: { cellWidth: 8, halign: 'center' },
       6: { cellWidth: 14, halign: 'center' },
       7: { cellWidth: 14, halign: 'center' },
-      8: { cellWidth: 22, halign: 'center' },
-      9: { cellWidth: 18, halign: 'center' }
+      8: { cellWidth: 13, halign: 'center' },
+      9: { cellWidth: 10, halign: 'center' },
+      10: { cellWidth: 11, halign: 'center' },
+      11: { cellWidth: 11, halign: 'center' },
+      12: { cellWidth: 16, halign: 'center' },
+      13: { cellWidth: 16, halign: 'center' }
     },
-    margin: { left: 10, right: 10 }
+    margin: { left: 5, right: 5 }
   });
   
   // Add footer
@@ -478,14 +547,28 @@ export const generatePerTestTopUsersPDF = async (testTitle: string, testContent:
   // Calculate startY based on content preview length
   const startY = 71 + (splitContent.length * 4) + 6;
   
-  // Prepare table data with keystrokes and status
+  // Get difficulty badge
+  const getDifficultyBadge = (difficulty?: string): string => {
+    if (!difficulty) return 'N/A';
+    const d = difficulty.toLowerCase();
+    if (d === 'hard' || d === 'h') return 'H';
+    if (d === 'medium' || d === 'm') return 'M';
+    if (d === 'easy' || d === 'e') return 'E';
+    return difficulty.charAt(0).toUpperCase();
+  };
+
+  // Prepare table data with all enhanced fields
   const tableData = topUsers.map((user, index) => [
     (index + 1).toString(),
     user.display_name,
+    user.exam_type || 'Standard',
+    (user.language || 'N/A').toUpperCase(),
+    getDifficultyBadge(user.difficulty),
     Number(user.wpm).toFixed(1),
+    (user.gross_speed || 0).toFixed(1),
+    (user.net_speed || 0).toFixed(1),
     `${Number(user.accuracy).toFixed(1)}%`,
     formatTime(user.time_taken),
-    user.total_words?.toString() || '0',
     (user.total_keystrokes || 0).toString(),
     getQualificationStatus(user),
     user.completed_at ? new Date(user.completed_at).toLocaleDateString() : 'N/A'
@@ -494,51 +577,59 @@ export const generatePerTestTopUsersPDF = async (testTitle: string, testContent:
   // Add table with Hindi font support for test title
   autoTable(doc, {
     startY: startY,
-    head: [['Rank', 'User', 'WPM', 'Acc', 'Time', 'Words', 'Keys', 'Status', 'Date']],
+    head: [['#', 'User', 'Exam', 'Lang', 'Diff', 'Net WPM', 'Gross Spd', 'Net Spd', 'Acc', 'Time', 'Keys', 'Status', 'Date']],
     body: tableData,
     theme: 'striped',
     headStyles: {
       fillColor: [99, 102, 241],
       textColor: [255, 255, 255],
-      fontSize: 8,
+      fontSize: 6,
       fontStyle: 'bold',
       halign: 'center'
     },
     bodyStyles: {
-      fontSize: 7
+      fontSize: 5.5
     },
     didParseCell: function(data) {
-      // Check if we need Hindi font (test title might have Hindi in it)
+      // Check if we need Hindi font
       if (data.cell.raw && typeof data.cell.raw === 'string') {
         if (/[\u0900-\u097F]/.test(data.cell.raw)) {
           data.cell.styles.font = 'NotoSansDevanagari';
         }
       }
-      // Color code qualification status
-      if (data.column.index === 7 && data.cell.raw) {
+      // Color code difficulty
+      if (data.column.index === 4 && data.cell.raw) {
         const text = data.cell.raw.toString();
-        if (text === 'Qualified') {
-          data.cell.styles.textColor = [22, 163, 74];
-        } else {
-          data.cell.styles.textColor = [220, 38, 38];
-        }
+        if (text === 'H') data.cell.styles.textColor = [220, 38, 38];
+        else if (text === 'M') data.cell.styles.textColor = [37, 99, 235];
+        else if (text === 'E') data.cell.styles.textColor = [22, 163, 74];
+      }
+      // Color code qualification status
+      if (data.column.index === 11 && data.cell.raw) {
+        const text = data.cell.raw.toString();
+        if (text === 'Qualified') data.cell.styles.textColor = [22, 163, 74];
+        else data.cell.styles.textColor = [220, 38, 38];
       }
     },
     alternateRowStyles: {
       fillColor: [248, 250, 252]
     },
     columnStyles: {
-      0: { cellWidth: 14, halign: 'center' },
-      1: { cellWidth: 35 },
-      2: { cellWidth: 16, halign: 'center' },
-      3: { cellWidth: 16, halign: 'center' },
-      4: { cellWidth: 18, halign: 'center' },
-      5: { cellWidth: 16, halign: 'center' },
-      6: { cellWidth: 16, halign: 'center' },
-      7: { cellWidth: 24, halign: 'center' },
-      8: { cellWidth: 20, halign: 'center' }
+      0: { cellWidth: 8, halign: 'center' },
+      1: { cellWidth: 26 },
+      2: { cellWidth: 16 },
+      3: { cellWidth: 10, halign: 'center' },
+      4: { cellWidth: 8, halign: 'center' },
+      5: { cellWidth: 14, halign: 'center' },
+      6: { cellWidth: 14, halign: 'center' },
+      7: { cellWidth: 13, halign: 'center' },
+      8: { cellWidth: 10, halign: 'center' },
+      9: { cellWidth: 12, halign: 'center' },
+      10: { cellWidth: 12, halign: 'center' },
+      11: { cellWidth: 18, halign: 'center' },
+      12: { cellWidth: 16, halign: 'center' }
     },
-    margin: { left: 10, right: 10 }
+    margin: { left: 5, right: 5 }
   });
   
   // Add footer

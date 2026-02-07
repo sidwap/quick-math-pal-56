@@ -348,18 +348,47 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      get_leaderboard: {
-        Args: { p_test_id: string }
-        Returns: {
-          accuracy: number
-          display_name: string
-          result_id: string
-          time_taken: number
-          total_words: number
-          user_id: string
-          wpm: number
-        }[]
-      }
+      get_leaderboard:
+        | {
+            Args: {
+              p_date_end?: string
+              p_date_start?: string
+              p_exam_type?: string
+              p_limit?: number
+            }
+            Returns: {
+              accuracy: number
+              completed_at: string
+              display_name: string
+              exam_type: string
+              result_id: string
+              time_taken: number
+              total_words: number
+              user_id: string
+              wpm: number
+            }[]
+          }
+        | {
+            Args: {
+              p_date_end?: string
+              p_date_start?: string
+              p_exam_type?: string
+              p_language?: string
+              p_limit?: number
+            }
+            Returns: {
+              accuracy: number
+              completed_at: string
+              display_name: string
+              exam_type: string
+              language: string
+              result_id: string
+              time_taken: number
+              total_words: number
+              user_id: string
+              wpm: number
+            }[]
+          }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]

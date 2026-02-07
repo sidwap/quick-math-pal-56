@@ -33,6 +33,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
+import { Leaderboard } from './Leaderboard';
 import { 
   exportUserTestHistory, 
   exportTopUsersByDate, 
@@ -108,6 +109,7 @@ const AdminPanel = ({ onTestCreated }: AdminPanelProps) => {
   const [userSearchQuery, setUserSearchQuery] = useState('');
   const [categorySearchQuery, setCategorySearchQuery] = useState('');
   const [userHistorySearch, setUserHistorySearch] = useState('');
+  const [testReportSearch, setTestReportSearch] = useState('');
   
   // Exam type filter for reports
   const [reportExamType, setReportExamType] = useState<string>('all');
@@ -190,7 +192,8 @@ const AdminPanel = ({ onTestCreated }: AdminPanelProps) => {
           typing_tests (
             title,
             category,
-            language
+            language,
+            difficulty
           )
         `)
         .eq('user_id', selectedUserForHistory)
@@ -678,12 +681,100 @@ const AdminPanel = ({ onTestCreated }: AdminPanelProps) => {
     });
   };
 
-  // Fetch leaderboard data for reports with additional data (filtered by exam type)
-  const { data: allTimeTopUsers = [] } = useQuery({
+  // Fetch leaderboard data for reports using the RPC function
+  const { data: allTimeTopUsers = [], isLoading: isLoadingTopUsers, error: topUsersError } = useQuery({
     queryKey: ['all-time-leaderboard', reportExamType],
     queryFn: async () => {
-      // Build query with exam type filter
-      let query = supabase
+      // Use the get_leaderboard RPC function
+      const { data, error } = await supabase.rpc('get_leaderboard', {
+        p_exam_type: reportExamType === 'all' ? null : reportExamType,
+        p_limit: 100
+      });
+      
+      if (error) {
+        console.error('Error fetching top users:', error);
+        throw error;
+      }
+
+      // Get additional test details including difficulty and speed metrics
+      if (data && data.length > 0) {
+        const resultIds = data.map((item: any) => item.result_id);
+        const { data: testData, error: testError } = await supabase
+          .from('test_results')
+          .select('id, gross_speed, net_speed, total_keystrokes, typing_tests(language, title, difficulty)')
+          .in('id', resultIds);
+
+        if (!testError && testData) {
+          const testMap = new Map(testData.map((t: any) => [t.id, { 
+            ...t.typing_tests, 
+            gross_speed: t.gross_speed,
+            net_speed: t.net_speed,
+            total_keystrokes: t.total_keystrokes
+          }]));
+          
+          return data.map((r: any) => {
+            const testInfo = testMap.get(r.result_id);
+            return {
+              result_id: r.result_id,
+              user_id: r.user_id,
+              wpm: r.wpm,
+              accuracy: r.accuracy,
+              time_taken: r.time_taken,
+              total_words: r.total_words || 0,
+              exam_type: r.exam_type,
+              completed_at: r.completed_at,
+              language: testInfo?.language || 'english',
+              test_title: testInfo?.title || 'Unknown Test',
+              display_name: r.display_name || 'Anonymous',
+              gross_speed: testInfo?.gross_speed || 0,
+              net_speed: testInfo?.net_speed || 0,
+              total_keystrokes: testInfo?.total_keystrokes || 0,
+              difficulty: testInfo?.difficulty || 'medium',
+            };
+          });
+        }
+      }
+      
+      return (data || []).map((r: any) => ({
+        result_id: r.result_id,
+        user_id: r.user_id,
+        wpm: r.wpm,
+        accuracy: r.accuracy,
+        time_taken: r.time_taken,
+        total_words: r.total_words || 0,
+        exam_type: r.exam_type,
+        completed_at: r.completed_at,
+        language: 'english',
+        test_title: 'Unknown Test',
+        display_name: r.display_name || 'Anonymous',
+        gross_speed: 0,
+        net_speed: 0,
+        total_keystrokes: 0,
+        difficulty: 'medium',
+      }));
+    }
+  });
+
+  // Filtered tests for Per-Test selector
+  const filteredTestsForReport = React.useMemo(() => {
+    if (!testReportSearch.trim()) return tests.filter(t => t.is_active);
+    const searchLower = testReportSearch.toLowerCase();
+    return tests.filter(t => 
+      t.is_active && (
+        t.title.toLowerCase().includes(searchLower) ||
+        t.category.toLowerCase().includes(searchLower)
+      )
+    );
+  }, [tests, testReportSearch]);
+
+  // Fetch leaderboard data for specific test
+  const { data: testTopUsers = [] } = useQuery({
+    queryKey: ['test-leaderboard', selectedTestForReport],
+    queryFn: async () => {
+      if (!selectedTestForReport) return [];
+      
+      // Query test results directly for this specific test
+      const { data, error } = await supabase
         .from('test_results')
         .select(`
           id,
@@ -694,25 +785,39 @@ const AdminPanel = ({ onTestCreated }: AdminPanelProps) => {
           total_words,
           exam_type,
           completed_at,
-          profiles!inner(full_name, email),
-          typing_tests!inner(language, title)
+          gross_speed,
+          net_speed,
+          total_keystrokes,
+          typing_tests(language, title, difficulty)
         `)
+        .eq('test_id', selectedTestForReport)
         .gte('accuracy', 85)
         .order('wpm', { ascending: false })
         .limit(100);
-
-      // Filter by exam type
-      if (reportExamType !== 'all') {
-        query = query.eq('exam_type', reportExamType);
-      }
-
-      const { data, error } = await query;
+      
       if (error) throw error;
-
-      // Filter for qualification criteria and format data
-      const qualified = (data || [])
-        .filter((r: any) => r.time_taken >= 600 || (r.total_words || 0) >= 400)
-        .map((r: any) => ({
+      
+      // Filter for qualification and get user names
+      const qualified = (data || []).filter((r: any) => 
+        r.time_taken >= 600 || (r.total_words || 0) >= 400
+      );
+      
+      if (qualified.length === 0) return [];
+      
+      // Fetch user profiles
+      const userIds = [...new Set(qualified.map((r: any) => r.user_id))];
+      const { data: profiles, error: profileError } = await supabase
+        .from('profiles')
+        .select('id, full_name, email')
+        .in('id', userIds);
+      
+      if (profileError) throw profileError;
+      
+      const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
+      
+      return qualified.map((r: any) => {
+        const profile = profileMap.get(r.user_id);
+        return {
           result_id: r.id,
           user_id: r.user_id,
           wpm: r.wpm,
@@ -723,49 +828,13 @@ const AdminPanel = ({ onTestCreated }: AdminPanelProps) => {
           completed_at: r.completed_at,
           language: r.typing_tests?.language || 'english',
           test_title: r.typing_tests?.title || 'Unknown Test',
-          display_name: r.profiles?.full_name || 
-            (r.profiles?.email ? r.profiles.email.split('@')[0] : 'Anonymous'),
-        }));
-      
-      return qualified;
-    }
-  });
-
-  // Fetch leaderboard data for specific test with additional data
-  const { data: testTopUsers = [] } = useQuery({
-    queryKey: ['test-leaderboard', selectedTestForReport],
-    queryFn: async () => {
-      if (!selectedTestForReport) return [];
-      const { data, error } = await supabase.rpc('get_leaderboard', { p_test_id: selectedTestForReport });
-      if (error) throw error;
-      
-      // Fetch additional data (completed_at, language, and title) for each result
-      if (data && data.length > 0) {
-        const resultIds = data.map((item: any) => item.result_id);
-        const { data: additionalData, error: additionalError } = await supabase
-          .from('test_results')
-          .select(`
-            id,
-            completed_at,
-            typing_tests!inner(language, title)
-          `)
-          .in('id', resultIds);
-        
-        if (!additionalError && additionalData) {
-          // Merge additional data with leaderboard data
-          return data.map((item: any) => {
-            const additional = additionalData.find((ad: any) => ad.id === item.result_id);
-            return {
-              ...item,
-              completed_at: additional?.completed_at,
-              language: additional?.typing_tests?.language || 'english',
-              test_title: additional?.typing_tests?.title || 'Unknown Test'
-            };
-          });
-        }
-      }
-      
-      return data || [];
+          display_name: profile?.full_name || (profile?.email ? profile.email.split('@')[0] : 'Anonymous'),
+          gross_speed: r.gross_speed || 0,
+          net_speed: r.net_speed || 0,
+          total_keystrokes: r.total_keystrokes || 0,
+          difficulty: r.typing_tests?.difficulty || 'medium',
+        };
+      });
     },
     enabled: !!selectedTestForReport
   });
@@ -1080,18 +1149,85 @@ const AdminPanel = ({ onTestCreated }: AdminPanelProps) => {
         </CardHeader>
         <CardContent>
           <Tabs defaultValue="create-test" className="space-y-4">
-            <TabsList className="grid w-full grid-cols-7">
-              <TabsTrigger value="exams">Manage Exams</TabsTrigger>
+            <TabsList className="grid w-full grid-cols-8">
+              <TabsTrigger value="leaderboard">Leaderboard</TabsTrigger>
               <TabsTrigger value="create-test">Create Test</TabsTrigger>
               <TabsTrigger value="bulk-import">Bulk Import</TabsTrigger>
               <TabsTrigger value="manage-tests">Manage Tests</TabsTrigger>
               <TabsTrigger value="manage-categories">Categories</TabsTrigger>
+              <TabsTrigger value="manage-exams">
+                <GraduationCap className="h-4 w-4 mr-1" />
+                Exams
+              </TabsTrigger>
               <TabsTrigger value="users">Users</TabsTrigger>
               <TabsTrigger value="notices">Notices</TabsTrigger>
             </TabsList>
             
-            <TabsContent value="exams">
-              <ExamManager />
+            <TabsContent value="leaderboard">
+              <div className="space-y-6">
+                <Leaderboard />
+                
+                {/* All-Time Top Users Table */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Users className="h-5 w-5" />
+                      All-Time Top Performers
+                      <Badge variant="secondary" className="ml-2">
+                        {allTimeTopUsers.length} qualified
+                      </Badge>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {allTimeTopUsers.length > 0 ? (
+                      <ScrollArea className="h-[400px]">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="w-12">Rank</TableHead>
+                              <TableHead>User</TableHead>
+                              <TableHead>WPM</TableHead>
+                              <TableHead>Accuracy</TableHead>
+                              <TableHead>Time</TableHead>
+                              <TableHead>Words</TableHead>
+                              <TableHead>Test</TableHead>
+                              <TableHead>Date</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {allTimeTopUsers.map((user: any, index: number) => (
+                              <TableRow key={user.result_id}>
+                                <TableCell className="font-bold">
+                                  {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `#${index + 1}`}
+                                </TableCell>
+                                <TableCell className="font-medium">{user.display_name}</TableCell>
+                                <TableCell className="text-primary font-semibold">{Math.round(user.wpm)}</TableCell>
+                                <TableCell>{user.accuracy.toFixed(1)}%</TableCell>
+                                <TableCell>
+                                  {user.time_taken >= 60 
+                                    ? `${Math.floor(user.time_taken / 60)}:${(user.time_taken % 60).toString().padStart(2, '0')}`
+                                    : `${user.time_taken}s`}
+                                </TableCell>
+                                <TableCell>{user.total_words}</TableCell>
+                                <TableCell className="max-w-[150px] truncate">{user.test_title}</TableCell>
+                                <TableCell className="text-muted-foreground text-sm">
+                                  {user.completed_at ? new Date(user.completed_at).toLocaleDateString() : '-'}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </ScrollArea>
+                    ) : (
+                      <div className="text-center py-12 text-muted-foreground">
+                        <Users className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                        <p>No qualified top performers yet.</p>
+                        <p className="text-sm mt-2">Requirements: 85%+ accuracy and (10+ min or 400+ words)</p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
             </TabsContent>
 
             <TabsContent value="create-test">
@@ -1758,16 +1894,32 @@ const AdminPanel = ({ onTestCreated }: AdminPanelProps) => {
                           Export leaderboard for a specific test with test details
                         </p>
                         <div className="space-y-2">
+                          {/* Search Input for Tests */}
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <Input
+                              placeholder="Search tests..."
+                              value={testReportSearch}
+                              onChange={(e) => setTestReportSearch(e.target.value)}
+                              className="pl-9"
+                            />
+                          </div>
                           <Select value={selectedTestForReport || ''} onValueChange={setSelectedTestForReport}>
                             <SelectTrigger>
                               <SelectValue placeholder="Select a test" />
                             </SelectTrigger>
-                            <SelectContent>
-                              {tests.filter(t => t.is_active).map((test) => (
-                                <SelectItem key={test.id} value={test.id}>
-                                  {test.title} ({test.category})
-                                </SelectItem>
-                              ))}
+                            <SelectContent className="max-h-60">
+                              {filteredTestsForReport.length > 0 ? (
+                                filteredTestsForReport.map((test) => (
+                                  <SelectItem key={test.id} value={test.id}>
+                                    {test.title} ({test.category})
+                                  </SelectItem>
+                                ))
+                              ) : (
+                                <div className="p-2 text-sm text-muted-foreground text-center">
+                                  No tests found
+                                </div>
+                              )}
                             </SelectContent>
                           </Select>
                           <div className="flex gap-2">
@@ -2027,6 +2179,10 @@ const AdminPanel = ({ onTestCreated }: AdminPanelProps) => {
                   </CardContent>
                 </Card>
               </div>
+            </TabsContent>
+
+            <TabsContent value="manage-exams">
+              <ExamManager />
             </TabsContent>
 
             <TabsContent value="notices">

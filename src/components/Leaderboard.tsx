@@ -28,10 +28,12 @@ interface LeaderboardEntry {
   display_name: string;
   exam_type?: string;
   completed_at?: string;
+  language?: string;
 }
 
 export const Leaderboard = ({ testId, currentUserId, defaultExamType }: LeaderboardProps) => {
   const [selectedExamType, setSelectedExamType] = useState<string>(defaultExamType || 'all');
+  const [selectedLanguage, setSelectedLanguage] = useState<string>('all');
   const [dateFilter, setDateFilter] = useState<'all_time' | 'today' | 'week' | 'month' | 'custom'>('all_time');
   const [customDate, setCustomDate] = useState<Date | undefined>(undefined);
 
@@ -63,65 +65,23 @@ export const Leaderboard = ({ testId, currentUserId, defaultExamType }: Leaderbo
   };
 
   const { data: leaderboard, isLoading } = useQuery({
-    queryKey: ['leaderboard', testId, selectedExamType, dateFilter, customDate?.toISOString()],
+    queryKey: ['leaderboard', testId, selectedExamType, selectedLanguage, dateFilter, customDate?.toISOString()],
     queryFn: async () => {
-      // Build query with exam type and date filters
-      let query = supabase
-        .from('test_results')
-        .select(`
-          id,
-          user_id,
-          wpm,
-          accuracy,
-          time_taken,
-          total_words,
-          exam_type,
-          completed_at,
-          profiles!inner(full_name, email)
-        `)
-        .gte('accuracy', 85)
-        .order('wpm', { ascending: false })
-        .limit(100);
-
-      // Filter by exam type
-      if (selectedExamType !== 'all') {
-        query = query.eq('exam_type', selectedExamType);
-      }
-
-      // Filter by test ID if provided
-      if (testId) {
-        query = query.eq('test_id', testId);
-      }
-
-      // Apply date filter
+      // Get date range for filters
       const dateRange = getDateRange();
-      if (dateRange) {
-        query = query.gte('completed_at', dateRange.start).lte('completed_at', dateRange.end);
-      }
-
-      // Additional qualification filter (time >= 600s OR total_words >= 400)
-      // Note: This is handled client-side since OR conditions are complex in Supabase
-      const { data, error } = await query;
+      
+      // Use the database function that bypasses RLS for public leaderboard
+      const { data, error } = await supabase.rpc('get_leaderboard', {
+        p_exam_type: selectedExamType === 'all' ? null : selectedExamType,
+        p_language: selectedLanguage === 'all' ? null : selectedLanguage,
+        p_date_start: dateRange?.start || null,
+        p_date_end: dateRange?.end || null,
+        p_limit: 100
+      });
       
       if (error) throw error;
       
-      // Filter for qualification criteria and format data
-      const qualified = (data || [])
-        .filter((r: any) => r.time_taken >= 600 || (r.total_words || 0) >= 400)
-        .map((r: any) => ({
-          result_id: r.id,
-          user_id: r.user_id,
-          wpm: r.wpm,
-          accuracy: r.accuracy,
-          time_taken: r.time_taken,
-          total_words: r.total_words || 0,
-          exam_type: r.exam_type,
-          completed_at: r.completed_at,
-          display_name: r.profiles?.full_name || 
-            (r.profiles?.email ? r.profiles.email.split('@')[0] : 'Anonymous'),
-        }));
-      
-      return qualified as LeaderboardEntry[];
+      return (data || []) as LeaderboardEntry[];
     },
   });
 
@@ -209,6 +169,18 @@ export const Leaderboard = ({ testId, currentUserId, defaultExamType }: Leaderbo
                   {exam.shortName}
                 </SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+
+          {/* Language Filter */}
+          <Select value={selectedLanguage} onValueChange={setSelectedLanguage}>
+            <SelectTrigger className="w-[140px]">
+              <SelectValue placeholder="Language" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Languages</SelectItem>
+              <SelectItem value="english">English</SelectItem>
+              <SelectItem value="hindi">Hindi</SelectItem>
             </SelectContent>
           </Select>
 

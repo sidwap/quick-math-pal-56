@@ -50,16 +50,20 @@ const StandardResultDialog = ({ isOpen, onClose, result, showQualificationStatus
     enabled: !!result?.test_id && isOpen
   });
 
-  // Apply word limit if it was used during the test
+  // Apply word limit based on database values
+  // Priority: word_limit_used > total_words > full content
   const limitedContent = useMemo(() => {
     if (!testData?.content) return '';
-    const wordLimitUsed = result?.word_limit_used;
-    if (wordLimitUsed && wordLimitUsed > 0) {
+    
+    // First try word_limit_used, then fall back to total_words from database
+    const wordLimit = result?.word_limit_used || result?.total_words;
+    
+    if (wordLimit && wordLimit > 0) {
       const words = testData.content.split(' ').filter((w: string) => w.trim() !== '');
-      return words.slice(0, wordLimitUsed).join(' ');
+      return words.slice(0, wordLimit).join(' ');
     }
     return testData.content;
-  }, [testData?.content, result?.word_limit_used]);
+  }, [testData?.content, result?.word_limit_used, result?.total_words]);
 
   // Compute word comparison using LCS algorithm
   const comparison: ComparisonResult | null = useMemo(() => {
@@ -93,8 +97,10 @@ const StandardResultDialog = ({ isOpen, onClose, result, showQualificationStatus
     : 0);
   const netSpeed = result.wpm || 0;
 
-  // Get stats from comparison or result
-  const stats = comparison?.stats || {
+  // ALWAYS use database values as primary source for stats
+  // The comparison is only used for visual paragraph display
+  // This ensures word limits and other test-time settings are respected
+  const stats = {
     totalWords: result.total_words || 0,
     correctWords: result.correct_words_count || 0,
     wrongWords: result.incorrect_words || 0,
@@ -478,14 +484,14 @@ const StandardResultDialog = ({ isOpen, onClose, result, showQualificationStatus
                 {/* Content */}
                 <div className="grid grid-cols-2">
                   {/* Original Paragraph */}
-                  <div className="p-4 border-r border-border bg-background max-h-96 overflow-y-auto">
+                  <div className="p-4 border-r border-border bg-background">
                     <div className="text-sm sm:text-base leading-loose text-justify">
                       {limitedContent}
                     </div>
                   </div>
 
                   {/* Typed Paragraph */}
-                  <div className="p-4 bg-background max-h-96 overflow-y-auto">
+                  <div className="p-4 bg-background">
                     <div className="text-sm sm:text-base leading-loose text-justify">
                       {renderTypedText()}
                     </div>
