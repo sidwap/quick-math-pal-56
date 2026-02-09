@@ -425,7 +425,7 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
     }
   };
 
-
+  const getDifficultyColor = (difficulty: string) => {
     switch (difficulty) {
       case 'H':
         return 'text-red-500';
