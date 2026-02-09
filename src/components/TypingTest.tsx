@@ -90,6 +90,16 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
   const [standardResult, setStandardResult] = useState<any>(null);
   const [standardComparison, setStandardComparison] = useState<ComparisonResult | null>(null);
   
+  // Search paragraph states
+  const [searchMode, setSearchMode] = useState<'date' | 'search'>('date');
+  const [searchKeyword, setSearchKeyword] = useState('');
+  const [searchDifficulty, setSearchDifficulty] = useState<string>('all');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isLoadingSearch, setIsLoadingSearch] = useState(false);
+  const [searchPage, setSearchPage] = useState(1);
+  const [searchTotalPages, setSearchTotalPages] = useState(1);
+  const [searchPageSize] = useState(20);
+  
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const displayRef = useRef<HTMLDivElement>(null);
   const currentWordRef = useRef<HTMLSpanElement>(null);
@@ -341,7 +351,81 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
     }
   };
 
-  const getDifficultyColor = (difficulty: string) => {
+  const fetchSearchTests = async (page: number = 1) => {
+    if (!searchKeyword.trim()) {
+      toast({
+        title: "Enter keyword",
+        description: "Please enter a search keyword to find tests",
+      });
+      return;
+    }
+    
+    setIsLoadingSearch(true);
+    setSearchPage(page);
+    try {
+      const SECRET_KEY = import.meta.env.VITE_SECRETE_KEY || '';
+      const keyword = searchKeyword.trim().replace(/\s+/g, '+');
+      
+      let urlPath = `/?language=1&keyword=${keyword}&page=${page}&page_size=${searchPageSize}`;
+      if (searchDifficulty && searchDifficulty !== 'all') {
+        const diffMap: Record<string, string> = { easy: 'E', medium: 'M', hard: 'H' };
+        urlPath += `&difficulty=${diffMap[searchDifficulty] || searchDifficulty}`;
+      }
+      
+      const { generateApiSignature } = await import('@/utils/apiSignature');
+      const { signature, timestamp: ts } = generateApiSignature(urlPath, SECRET_KEY);
+      
+      const response = await fetch(
+        `https://typingdata.testingsd9.workers.dev${urlPath}`,
+        {
+          headers: {
+            'X-Signature': signature,
+            'X-Timestamp': ts
+          }
+        }
+      );
+      
+      if (!response.ok) throw new Error('Failed to fetch search results');
+      
+      const data = await response.json();
+      
+      // Handle paginated response
+      const tests = Array.isArray(data) ? data : (data.data || data.results || []);
+      const totalPages = data.total_pages || data.totalPages || Math.ceil((data.total || tests.length) / searchPageSize) || 1;
+      
+      const processedTests = tests.map((test: any) => ({
+        id: test.id.toString(),
+        title: test.title,
+        content: processText(test.passage_text),
+        language: 'english' as const,
+        difficulty: test.difficulty,
+        category: 'Daily New Tests',
+        time_limit: 900
+      }));
+      
+      setSearchResults(processedTests);
+      setSearchTotalPages(totalPages);
+      
+      if (processedTests.length === 0) {
+        toast({
+          title: "No tests found",
+          description: `No tests found for "${searchKeyword}"`,
+        });
+      }
+    } catch (error) {
+      console.error('Error searching tests:', error);
+      toast({
+        title: "Error",
+        description: "Failed to search tests. Please try again.",
+        variant: "destructive"
+      });
+      setSearchResults([]);
+    } finally {
+      setIsLoadingSearch(false);
+    }
+  };
+
+
     switch (difficulty) {
       case 'H':
         return 'text-red-500';
@@ -1468,13 +1552,17 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
     );
   }
 
-  // Daily New Tests Date Picker
+  // Daily New Tests Date Picker + Search
   if (selectedCategory === 'Daily New Tests' && !selectedTest) {
     return (
       <Card className="border-2 shadow-lg">
         <CardHeader className="text-center pb-2">
-          <CardTitle className="text-3xl font-bold">Select Date</CardTitle>
-          <p className="text-muted-foreground mt-2">Choose a date to see available tests</p>
+          <CardTitle className="text-3xl font-bold">
+            {searchMode === 'search' ? 'Search Tests' : 'Select Date'}
+          </CardTitle>
+          <p className="text-muted-foreground mt-2">
+            {searchMode === 'search' ? 'Search paragraphs by keyword' : 'Choose a date to see available tests'}
+          </p>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="flex items-center justify-between p-4 bg-muted rounded-lg">
@@ -1493,74 +1581,218 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
                 setSelectedCategory('');
                 setSelectedTest(null);
                 setDailyTests([]);
+                setSearchResults([]);
+                setSearchKeyword('');
+                setSearchMode('date');
               }}
             >
               ← Change Category
             </Button>
           </div>
 
-          <div className="flex justify-center">
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="w-full max-w-sm justify-start text-left font-normal h-12"
-                >
-                  <CalendarIcon className="mr-2 h-5 w-5" />
-                  {selectedDate ? format(selectedDate, 'PPP') : <span>Pick a date</span>}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="center">
-                <Calendar
-                  mode="single"
-                  selected={selectedDate}
-                  onSelect={setSelectedDate}
-                  initialFocus
-                />
-              </PopoverContent>
-            </Popover>
-          </div>
-
-          <Button
-            onClick={fetchDailyTests}
-            disabled={!selectedDate || isLoadingDailyTests}
-            className="w-full h-12 text-lg"
-            size="lg"
-          >
-            {isLoadingDailyTests ? 'Loading Tests...' : 'Load Tests'}
-          </Button>
-
-          {isLoadingTestContent ? (
-            <div className="text-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-              <p className="text-muted-foreground text-lg">
-                {selectedLanguage === 'hindi' ? 'पैराग्राफ लोड हो रहा है...' : 'Loading paragraph...'}
-              </p>
+          {/* Mode toggle tabs - only for English */}
+          {selectedLanguage === 'english' && (
+            <div className="flex gap-2 justify-center">
+              <Button
+                variant={searchMode === 'date' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setSearchMode('date')}
+                className="flex items-center gap-2"
+              >
+                <CalendarIcon className="h-4 w-4" />
+                Search by Date
+              </Button>
+              <Button
+                variant={searchMode === 'search' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setSearchMode('search')}
+                className="flex items-center gap-2"
+              >
+                <Search className="h-4 w-4" />
+                Search Tests
+              </Button>
             </div>
-          ) : dailyTests.length > 0 && (
-            <div className="space-y-4">
-              <h3 className="font-semibold text-xl text-center">Available Tests</h3>
-              <div className="grid grid-cols-1 gap-3">
-                {dailyTests.map((test) => (
-                  <Card
-                    key={test.id}
-                    className="group cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all duration-300 border-2 hover:border-primary"
-                    onClick={() => selectTest(test)}
-                  >
-                    <CardContent className="p-4">
-                      <div className="flex items-start gap-2">
-                        <span className={`font-bold ${getDifficultyColor(test.difficulty)} text-sm`}>
-                          [{getDifficultyLabel(test.difficulty)}]
-                        </span>
-                        <h4 className="font-semibold text-base group-hover:text-primary transition-colors">
-                          {test.title}
-                        </h4>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+          )}
+
+          {/* Date mode */}
+          {searchMode === 'date' && (
+            <>
+              <div className="flex justify-center">
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className="w-full max-w-sm justify-start text-left font-normal h-12"
+                    >
+                      <CalendarIcon className="mr-2 h-5 w-5" />
+                      {selectedDate ? format(selectedDate, 'PPP') : <span>Pick a date</span>}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="center">
+                    <Calendar
+                      mode="single"
+                      selected={selectedDate}
+                      onSelect={setSelectedDate}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
               </div>
-            </div>
+
+              <Button
+                onClick={fetchDailyTests}
+                disabled={!selectedDate || isLoadingDailyTests}
+                className="w-full h-12 text-lg"
+                size="lg"
+              >
+                {isLoadingDailyTests ? 'Loading Tests...' : 'Load Tests'}
+              </Button>
+
+              {isLoadingTestContent ? (
+                <div className="text-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                  <p className="text-muted-foreground text-lg">Loading paragraph...</p>
+                </div>
+              ) : dailyTests.length > 0 && (
+                <div className="space-y-4">
+                  <h3 className="font-semibold text-xl text-center">Available Tests</h3>
+                  <div className="grid grid-cols-1 gap-3">
+                    {dailyTests.map((test) => (
+                      <Card
+                        key={test.id}
+                        className="group cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all duration-300 border-2 hover:border-primary"
+                        onClick={() => selectTest(test)}
+                      >
+                        <CardContent className="p-4">
+                          <div className="flex items-start gap-2">
+                            <span className={`font-bold ${getDifficultyColor(test.difficulty)} text-sm`}>
+                              [{getDifficultyLabel(test.difficulty)}]
+                            </span>
+                            <h4 className="font-semibold text-base group-hover:text-primary transition-colors">
+                              {test.title}
+                            </h4>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Search mode - English only */}
+          {searchMode === 'search' && selectedLanguage === 'english' && (
+            <>
+              <div className="space-y-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Enter keyword to search (e.g., Science, The Hindu)..."
+                    value={searchKeyword}
+                    onChange={(e) => setSearchKeyword(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        setSearchPage(1);
+                        fetchSearchTests(1);
+                      }
+                    }}
+                    className="pl-10 h-12 text-base"
+                  />
+                </div>
+                
+                <div className="flex gap-3 items-end">
+                  <div className="flex-1">
+                    <Label className="text-sm font-medium mb-1.5 block">Difficulty (Optional)</Label>
+                    <Select value={searchDifficulty} onValueChange={setSearchDifficulty}>
+                      <SelectTrigger className="h-12">
+                        <SelectValue placeholder="All Difficulties" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Difficulties</SelectItem>
+                        <SelectItem value="easy">Easy</SelectItem>
+                        <SelectItem value="medium">Medium</SelectItem>
+                        <SelectItem value="hard">Hard</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button
+                    onClick={() => {
+                      setSearchPage(1);
+                      fetchSearchTests(1);
+                    }}
+                    disabled={!searchKeyword.trim() || isLoadingSearch}
+                    className="h-12 px-6 text-base"
+                    size="lg"
+                  >
+                    {isLoadingSearch ? 'Searching...' : 'Load Tests'}
+                  </Button>
+                </div>
+              </div>
+
+              {isLoadingSearch ? (
+                <div className="text-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                  <p className="text-muted-foreground text-lg">Loading passages, this can take time...</p>
+                </div>
+              ) : isLoadingTestContent ? (
+                <div className="text-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+                  <p className="text-muted-foreground text-lg">Loading paragraph...</p>
+                </div>
+              ) : searchResults.length > 0 && (
+                <div className="space-y-4">
+                  <h3 className="font-semibold text-xl text-center">
+                    Search Results {searchTotalPages > 1 && `(Page ${searchPage} of ${searchTotalPages})`}
+                  </h3>
+                  <div className="grid grid-cols-1 gap-3 max-h-[50vh] overflow-y-auto">
+                    {searchResults.map((test) => (
+                      <Card
+                        key={test.id}
+                        className="group cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all duration-300 border-2 hover:border-primary"
+                        onClick={() => selectTest(test)}
+                      >
+                        <CardContent className="p-4">
+                          <div className="flex items-start gap-2">
+                            <span className={`font-bold ${getDifficultyColor(test.difficulty)} text-sm`}>
+                              [{getDifficultyLabel(test.difficulty)}]
+                            </span>
+                            <h4 className="font-semibold text-base group-hover:text-primary transition-colors">
+                              {test.title}
+                            </h4>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                  
+                  {/* Pagination */}
+                  {searchTotalPages > 1 && (
+                    <div className="flex items-center justify-center gap-2 pt-4">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={searchPage <= 1 || isLoadingSearch}
+                        onClick={() => fetchSearchTests(searchPage - 1)}
+                      >
+                        ← Previous
+                      </Button>
+                      <span className="text-sm text-muted-foreground px-3">
+                        Page {searchPage} of {searchTotalPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={searchPage >= searchTotalPages || isLoadingSearch}
+                        onClick={() => fetchSearchTests(searchPage + 1)}
+                      >
+                        Next →
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
