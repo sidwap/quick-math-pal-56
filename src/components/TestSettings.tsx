@@ -11,7 +11,7 @@ interface TestSettingsProps {
   settings: {
     highlightText: boolean;
     showErrors: boolean;
-    backspaceMode: 'full' | 'word' | 'disabled';
+    backspaceMode: 'full' | 'twoword' | 'word' | 'disabled';
     timeLimit: number;
     language: 'english' | 'hindi';
   };
@@ -91,7 +91,8 @@ const TestSettings = ({ settings, onSettingsChange }: TestSettingsProps) => {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="full">Full correction allowed</SelectItem>
-                  <SelectItem value="word">Word-level correction</SelectItem>
+                  <SelectItem value="twoword">Two words back (UPSSSC style)</SelectItem>
+                  <SelectItem value="word">One word correction</SelectItem>
                   <SelectItem value="disabled">Backspace disabled</SelectItem>
                 </SelectContent>
               </Select>

@@ -37,7 +37,7 @@ import { compareWords, ComparisonResult } from '@/utils/wordComparison';
 import { calculateUPSSSCSpeed } from '@/config/examConfig';
 import UPSSSCResults from './UPSSSCResults';
 
-type BackspaceMode = 'full' | 'oneword' | 'disabled';
+type BackspaceMode = 'full' | 'twoword' | 'oneword' | 'disabled';
 
 interface UPSSSCTypingTestProps {
   selectedTest: {
@@ -58,7 +58,7 @@ const UPSSSCTypingTest = ({ selectedTest, words, onStartNewTest }: UPSSSCTypingT
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [highlightEnabled, setHighlightEnabled] = useState(true);
   const [autoScroll, setAutoScroll] = useState(true);
-  const [backspaceMode, setBackspaceMode] = useState<BackspaceMode>('full');
+  const [backspaceMode, setBackspaceMode] = useState<BackspaceMode>('twoword');
   const [showSettings, setShowSettings] = useState(false);
   const [isActive, setIsActive] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
@@ -174,16 +174,49 @@ const UPSSSCTypingTest = ({ selectedTest, words, onStartNewTest }: UPSSSCTypingT
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
   }, []);
 
-  // Handle typing input
-  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const rawValue = e.target.value;
-    const newValue = processText(rawValue);
-    
-    if (rawValue !== newValue) {
-      e.target.value = newValue;
+  // Helper to find nth last space index
+  const findNthLastSpaceIndex = (text: string, n: number): number => {
+    let count = 0;
+    for (let i = text.length - 1; i >= 0; i--) {
+      if (text[i] === ' ') {
+        count++;
+        if (count === n) {
+          return i;
+        }
+      }
     }
+    return -1;
+  };
+
+  // Get current word index based on spaces typed
+  const getCurrentWordIndex = useCallback((text: string): number => {
+    if (text.length === 0) return 0;
+    // Count spaces to determine which word we're on
+    const spaceCount = (text.match(/ /g) || []).length;
+    // If text ends with space, we're on the next word
+    if (text.endsWith(' ')) {
+      return spaceCount;
+    }
+    return spaceCount;
+  }, []);
+
+  // Get typed words array (completed words only)
+  const getTypedWords = useCallback((text: string): string[] => {
+    if (text.length === 0) return [];
+    const parts = text.split(' ');
+    // If text ends with space, all parts are complete words (except last empty string)
+    if (text.endsWith(' ')) {
+      return parts.slice(0, -1);
+    }
+    // Otherwise, last part is incomplete - return all but last
+    return parts.slice(0, -1);
+  }, []);
+
+  // Handle typing input - simplified and robust
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newValue = e.target.value;
     
-    // Start timer on first keystroke
+    // Start timer on first character
     if (newValue.length > 0 && !isActive) {
       startTimer();
     }
@@ -191,25 +224,35 @@ const UPSSSCTypingTest = ({ selectedTest, words, onStartNewTest }: UPSSSCTypingT
     // Handle backspace restrictions
     if (newValue.length < typedText.length) {
       if (backspaceMode === 'disabled') {
+        e.target.value = typedText;
         return;
       } else if (backspaceMode === 'oneword') {
         const lastSpaceIndex = typedText.lastIndexOf(' ');
         const minLength = lastSpaceIndex === -1 ? 0 : lastSpaceIndex + 1;
         if (newValue.length < minLength) {
+          e.target.value = typedText.substring(0, minLength);
+          return;
+        }
+      } else if (backspaceMode === 'twoword') {
+        const secondLastSpaceIndex = findNthLastSpaceIndex(typedText, 2);
+        const minLength = secondLastSpaceIndex === -1 ? 0 : secondLastSpaceIndex + 1;
+        if (newValue.length < minLength) {
+          e.target.value = typedText.substring(0, minLength);
           return;
         }
       }
     }
 
-    setTypedText(newValue);
+    // Apply text normalization only for Hindi special characters
+    const finalValue = selectedTest.language === 'hindi' ? processText(newValue) : newValue;
+    setTypedText(finalValue);
 
-    // Auto-scroll
+    // Auto-scroll to current word
     if (autoScroll && paragraphRef.current) {
-      const typedWords = newValue.trim().split(' ').filter(w => w.length > 0);
-      const typedLen = typedWords.length;
+      const currentIdx = getCurrentWordIndex(finalValue);
       const spans = paragraphRef.current.querySelectorAll('span[data-word]');
-      if (spans[typedLen]) {
-        (spans[typedLen] as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (spans[currentIdx]) {
+        (spans[currentIdx] as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
     }
   };
@@ -231,28 +274,57 @@ const UPSSSCTypingTest = ({ selectedTest, words, onStartNewTest }: UPSSSCTypingT
   };
 
   // Render paragraph with highlighting
-  const renderParagraph = () => {
-    const typedWords = typedText.trim().split(' ').filter(w => w.length > 0);
-    const typedLen = typedWords.length;
+  // Color scheme: Yellow = current word, Green = correct, Red = wrong, Gray = upcoming
+  const renderParagraph = useCallback(() => {
+    // Get completed words (words followed by space)
+    const completedWords = getTypedWords(typedText);
+    const completedCount = completedWords.length;
+    
+    // Current word index - if text ends with space, we're on the NEXT word
+    const currentWordIndex = typedText.endsWith(' ') ? completedCount : completedCount;
 
-    return words.map((word, index) => {
-      let className = 'text-muted-foreground';
+    return words.map((originalWord, index) => {
+      let className = 'transition-colors duration-150 ';
+      let style: React.CSSProperties = {};
       
       if (highlightEnabled) {
-        if (index < typedLen) {
-          className = 'text-primary';
-        } else if (index === typedLen) {
-          className = 'text-foreground font-semibold';
+        if (index < completedCount) {
+          // Completed word - check if correct or wrong
+          const typedWord = completedWords[index] || '';
+          if (typedWord === originalWord) {
+            // Correct - Green
+            className += 'font-semibold';
+            style = { color: 'hsl(142, 71%, 45%)' }; // green
+          } else {
+            // Wrong - Red
+            className += 'font-semibold';
+            style = { color: 'hsl(0, 84%, 60%)' }; // red
+          }
+        } else if (index === currentWordIndex) {
+          // Current word being typed - Yellow with background
+          // className += 'font-bold';
+          style = { 
+            color: 'hsl(0, 0%, 0%)', // black
+            backgroundColor: 'hsla(48, 96%, 53%, 0.65)',
+            padding: '2px 4px',
+            borderRadius: '3px',
+            margin: '0 -2px'
+          };
+        } else {
+          // Upcoming words - muted
+          className += 'text-muted-foreground';
         }
+      } else {
+        className += 'text-foreground';
       }
 
       return (
-        <span key={index} data-word={index} className={className}>
-          {word}{' '}
+        <span key={index} data-word={index} className={className} style={style}>
+          {originalWord}{' '}
         </span>
       );
     });
-  };
+  }, [typedText, words, highlightEnabled, getTypedWords]);
 
   // Handle submit
   const handleSubmit = useCallback(async () => {
@@ -662,6 +734,12 @@ const UPSSSCTypingTest = ({ selectedTest, words, onStartNewTest }: UPSSSCTypingT
                   <SelectValue placeholder="Select backspace mode" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="twoword">
+                    <div className="flex flex-col">
+                      <span>Two Words Back (UPSSSC)</span>
+                      <span className="text-xs text-muted-foreground">Backspace allowed for 2 words - Official UPSSSC rule</span>
+                    </div>
+                  </SelectItem>
                   <SelectItem value="full">
                     <div className="flex flex-col">
                       <span>Full Backspace</span>

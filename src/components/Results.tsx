@@ -87,7 +87,7 @@ const Results = ({ results }: ResultsProps) => {
   const [historySearch, setHistorySearch] = React.useState('');
   const [examTypeFilter, setExamTypeFilter] = React.useState<string>('all');
   const [languageFilter, setLanguageFilter] = React.useState<string>('all');
-  const [dateFilter, setDateFilter] = React.useState<DateFilterType>('all_time');
+  const [dateFilter, setDateFilter] = React.useState<DateFilterType>('today');
   const [customDateStart, setCustomDateStart] = React.useState<Date | undefined>(undefined);
   const [customDateEnd, setCustomDateEnd] = React.useState<Date | undefined>(undefined);
 

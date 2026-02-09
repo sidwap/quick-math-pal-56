@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "./ui/card";
-import { Trophy, Medal, Award, Zap, Target, Crown, Filter, Calendar as CalendarIcon } from "lucide-react";
+import { Trophy, Medal, Award, Zap, Target, Crown, Filter, Calendar as CalendarIcon, Keyboard, Gauge } from "lucide-react";
 import { Badge } from "./ui/badge";
 import { ScrollArea } from "./ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
@@ -29,12 +29,14 @@ interface LeaderboardEntry {
   exam_type?: string;
   completed_at?: string;
   language?: string;
+  gross_speed?: number;
+  total_keystrokes?: number;
 }
 
 export const Leaderboard = ({ testId, currentUserId, defaultExamType }: LeaderboardProps) => {
   const [selectedExamType, setSelectedExamType] = useState<string>(defaultExamType || 'all');
   const [selectedLanguage, setSelectedLanguage] = useState<string>('all');
-  const [dateFilter, setDateFilter] = useState<'all_time' | 'today' | 'week' | 'month' | 'custom'>('all_time');
+  const [dateFilter, setDateFilter] = useState<'all_time' | 'today' | 'week' | 'month' | 'custom'>('today');
   const [customDate, setCustomDate] = useState<Date | undefined>(undefined);
 
   const availableExams = getAvailableExams();
@@ -280,6 +282,18 @@ export const Leaderboard = ({ testId, currentUserId, defaultExamType }: Leaderbo
                         <Target className="w-3 h-3 text-green-500" />
                         <span>{result.accuracy.toFixed(1)}%</span>
                       </div>
+                      {result.gross_speed !== null && result.gross_speed !== undefined && (
+                        <div className="flex items-center gap-1">
+                          <Gauge className="w-3 h-3 text-orange-500" />
+                          <span className="text-muted-foreground">GS: {result.gross_speed.toFixed(1)}</span>
+                        </div>
+                      )}
+                      {result.total_keystrokes !== null && result.total_keystrokes !== undefined && (
+                        <div className="flex items-center gap-1">
+                          <Keyboard className="w-3 h-3 text-blue-500" />
+                          <span className="text-muted-foreground">{result.total_keystrokes} keys</span>
+                        </div>
+                      )}
                       <div className="text-muted-foreground">
                         {result.time_taken >= 60 
                           ? `${Math.floor(result.time_taken / 60)}:${(result.time_taken % 60).toString().padStart(2, '0')}`
