@@ -97,7 +97,7 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isLoadingSearch, setIsLoadingSearch] = useState(false);
   const [searchPage, setSearchPage] = useState(1);
-  const [searchTotalPages, setSearchTotalPages] = useState(1);
+  const [searchHasMore, setSearchHasMore] = useState(false);
   const [searchPageSize] = useState(20);
   
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -366,7 +366,8 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
       const SECRET_KEY = import.meta.env.VITE_SECRETE_KEY || '';
       const keyword = searchKeyword.trim().replace(/\s+/g, '+');
       
-      let urlPath = `/?language=1&keyword=${keyword}&page=${page}&page_size=${searchPageSize}`;
+      const langCode = selectedLanguage === 'hindi' ? 3 : 1;
+      let urlPath = `/?language=${langCode}&keyword=${keyword}&page=${page}&page_size=${searchPageSize}`;
       if (searchDifficulty && searchDifficulty !== 'all') {
         const diffMap: Record<string, string> = { easy: 'E', medium: 'M', hard: 'H' };
         urlPath += `&difficulty=${diffMap[searchDifficulty] || searchDifficulty}`;
@@ -397,14 +398,14 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
         id: test.id.toString(),
         title: test.title,
         content: processText(test.passage_text),
-        language: 'english' as const,
+        language: selectedLanguage as 'english' | 'hindi',
         difficulty: test.difficulty,
         category: 'Daily New Tests',
         time_limit: 900
       }));
       
-      setSearchResults(processedTests);
-      setSearchTotalPages(totalPages);
+      setSearchResults(prev => page === 1 ? processedTests : [...prev, ...processedTests]);
+      setSearchHasMore(processedTests.length >= searchPageSize);
       
       if (processedTests.length === 0) {
         toast({
@@ -1590,8 +1591,8 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
             </Button>
           </div>
 
-          {/* Mode toggle tabs - only for English */}
-          {selectedLanguage === 'english' && (
+          {/* Mode toggle tabs */}
+          {(selectedLanguage === 'english' || selectedLanguage === 'hindi') && (
             <div className="flex gap-2 justify-center">
               <Button
                 variant={searchMode === 'date' ? 'default' : 'outline'}
@@ -1681,8 +1682,8 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
             </>
           )}
 
-          {/* Search mode - English only */}
-          {searchMode === 'search' && selectedLanguage === 'english' && (
+          {/* Search mode */}
+          {searchMode === 'search' && (
             <>
               <div className="space-y-4">
                 <div className="relative">
@@ -1743,7 +1744,7 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
               ) : searchResults.length > 0 && (
                 <div className="space-y-4">
                   <h3 className="font-semibold text-xl text-center">
-                    Search Results {searchTotalPages > 1 && `(Page ${searchPage} of ${searchTotalPages})`}
+                    Search Results
                   </h3>
                   <div className="grid grid-cols-1 gap-3 max-h-[50vh] overflow-y-auto">
                     {searchResults.map((test) => (
@@ -1766,27 +1767,19 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
                     ))}
                   </div>
                   
-                  {/* Pagination */}
-                  {searchTotalPages > 1 && (
-                    <div className="flex items-center justify-center gap-2 pt-4">
+                  {/* Next button - show only if more data available */}
+                  {searchHasMore && (
+                    <div className="flex justify-center pt-4">
                       <Button
                         variant="outline"
-                        size="sm"
-                        disabled={searchPage <= 1 || isLoadingSearch}
-                        onClick={() => fetchSearchTests(searchPage - 1)}
+                        disabled={isLoadingSearch}
+                        onClick={() => {
+                          const nextPage = searchPage + 1;
+                          setSearchPage(nextPage);
+                          fetchSearchTests(nextPage);
+                        }}
                       >
-                        ← Previous
-                      </Button>
-                      <span className="text-sm text-muted-foreground px-3">
-                        Page {searchPage} of {searchTotalPages}
-                      </span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={searchPage >= searchTotalPages || isLoadingSearch}
-                        onClick={() => fetchSearchTests(searchPage + 1)}
-                      >
-                        Next →
+                        {isLoadingSearch ? 'Loading...' : 'Next →'}
                       </Button>
                     </div>
                   )}
