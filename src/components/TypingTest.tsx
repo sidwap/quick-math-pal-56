@@ -404,7 +404,7 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
         time_limit: 900
       }));
       
-      setSearchResults(prev => page === 1 ? processedTests : [...prev, ...processedTests]);
+      setSearchResults(processedTests);
       setSearchHasMore(processedTests.length >= searchPageSize);
       
       if (processedTests.length === 0) {
@@ -1767,20 +1767,36 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
                     ))}
                   </div>
                   
-                  {/* Next button - show only if more data available */}
-                  {searchHasMore && (
-                    <div className="flex justify-center pt-4">
-                      <Button
-                        variant="outline"
-                        disabled={isLoadingSearch}
-                        onClick={() => {
-                          const nextPage = searchPage + 1;
-                          setSearchPage(nextPage);
-                          fetchSearchTests(nextPage);
-                        }}
-                      >
-                        {isLoadingSearch ? 'Loading...' : 'Next →'}
-                      </Button>
+                  {/* Pagination */}
+                  {(searchPage > 1 || searchHasMore) && (
+                    <div className="flex items-center justify-center gap-3 pt-4">
+                      {searchPage > 1 && (
+                        <Button
+                          variant="outline"
+                          disabled={isLoadingSearch}
+                          onClick={() => {
+                            const prevPage = searchPage - 1;
+                            setSearchPage(prevPage);
+                            fetchSearchTests(prevPage);
+                          }}
+                        >
+                          ← Previous
+                        </Button>
+                      )}
+                      <span className="text-sm text-muted-foreground">Page {searchPage}</span>
+                      {searchHasMore && (
+                        <Button
+                          variant="outline"
+                          disabled={isLoadingSearch}
+                          onClick={() => {
+                            const nextPage = searchPage + 1;
+                            setSearchPage(nextPage);
+                            fetchSearchTests(nextPage);
+                          }}
+                        >
+                          {isLoadingSearch ? 'Loading...' : 'Next →'}
+                        </Button>
+                      )}
                     </div>
                   )}
                 </div>
