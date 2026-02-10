@@ -221,8 +221,8 @@ export const getAvailableExams = (): ExamConfig[] => {
     ALL_EXAM_CONFIG,
     UP_POLICE_CONFIG,
     UPSSSC_JUNIOR_ASSISTANT_CONFIG,
+    RRB_NTPC_CONFIG,
     // SSC_CGL_CONFIG, // Uncomment when ready
-    // RRB_NTPC_CONFIG, // Uncomment when ready
   ];
 };
 
