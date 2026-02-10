@@ -20,6 +20,7 @@ import { compareWords, ComparisonResult } from '@/utils/wordComparison';
 import UPPoliceResults from './UPPoliceResults';
 import StandardResults from './StandardResults';
 import UPSSSCTypingTest from './UPSSSCTypingTest';
+import RRBNTPCTypingTest from './RRBNTPCTypingTest';
 import ntaLogo from '@/assets/NTA_logo_1.png';
 
 interface TypingTest {
@@ -1226,7 +1227,7 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
   }
 
   // Standard Results Display
-  if (standardResult && standardComparison && selectedTest && selectedExamType !== 'up_police' && selectedExamType !== 'upsssc_junior_assistant') {
+  if (standardResult && standardComparison && selectedTest && selectedExamType !== 'up_police' && selectedExamType !== 'upsssc_junior_assistant' && selectedExamType !== 'rrb_ntpc') {
     return (
       <StandardResults
         result={standardResult}
@@ -1242,6 +1243,17 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
   if (selectedExamType === 'upsssc_junior_assistant' && !showSettings && selectedTest) {
     return (
       <UPSSSCTypingTest
+        selectedTest={selectedTest}
+        words={words}
+        onStartNewTest={resetTest}
+      />
+    );
+  }
+
+  // RRB NTPC Typing Test - completely separate interface
+  if (selectedExamType === 'rrb_ntpc' && !showSettings && selectedTest) {
+    return (
+      <RRBNTPCTypingTest
         selectedTest={selectedTest}
         words={words}
         onStartNewTest={resetTest}
@@ -2091,6 +2103,7 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
                       <SelectItem value="all_exam">📝 All Exam (Standard)</SelectItem>
                       <SelectItem value="up_police">🚔 UP Police SI/ASI, Computer Operator</SelectItem>
                       <SelectItem value="upsssc_junior_assistant">📋 UPSSSC Junior Assistant</SelectItem>
+                      <SelectItem value="rrb_ntpc">🚂 RRB NTPC (Railway)</SelectItem>
                     </SelectContent>
                   </Select>
                   <p className="text-xs text-muted-foreground">
@@ -2098,6 +2111,8 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
                       ? 'UP Police: 85% accuracy + min speed (30 WPM English / 25 WPM Hindi)' 
                       : selectedExamType === 'upsssc_junior_assistant'
                       ? 'UPSSSC JA: 5 min, 5 keystrokes=1 word, 5 admissible errors, 5-word penalty per extra error'
+                      : selectedExamType === 'rrb_ntpc'
+                      ? 'RRB NTPC: 10 min, 5 keystrokes=1 word, 30 WPM English / 25 WPM Hindi'
                       : 'Standard typing test with keystroke-based accuracy'}
                   </p>
                 </div>

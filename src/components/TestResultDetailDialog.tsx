@@ -27,6 +27,7 @@ import { getExamConfig, getExamShortName, isQualified as checkQualification, typ
 import UPPoliceResultDialog from './UPPoliceResultDialog';
 import StandardResultDialog from './StandardResultDialog';
 import UPSSSCResultDialog from './UPSSSCResultDialog';
+import RRBNTPCResultDialog from './RRBNTPCResultDialog';
 
 interface TestResultDetailDialogProps {
   isOpen: boolean;
@@ -42,6 +43,7 @@ const TestResultDetailDialog = ({ isOpen, onClose, result }: TestResultDetailDia
   const isUPPoliceExam = examType === 'up_police';
   const isStandardExam = examType === 'all_exam';
   const isUPSSSCExam = examType === 'upsssc_junior_assistant';
+  const isRRBNTPCExam = examType === 'rrb_ntpc';
   
   // Fetch exam config from database to check show_qualification_status
   const { data: dbExamConfig } = useQuery({
@@ -74,7 +76,7 @@ const TestResultDetailDialog = ({ isOpen, onClose, result }: TestResultDetailDia
       if (error) throw error;
       return data;
     },
-    enabled: !!result?.test_id && isOpen && !isUPPoliceExam && !isStandardExam && !isUPSSSCExam
+    enabled: !!result?.test_id && isOpen && !isUPPoliceExam && !isStandardExam && !isUPSSSCExam && !isRRBNTPCExam
   });
 
   // Compute word comparison using LCS algorithm - must be after useQuery but before early return
@@ -94,6 +96,13 @@ const TestResultDetailDialog = ({ isOpen, onClose, result }: TestResultDetailDia
   if (isUPSSSCExam && result) {
     return (
       <UPSSSCResultDialog isOpen={isOpen} onClose={onClose} result={result} />
+    );
+  }
+
+  // For RRB NTPC exam
+  if (isRRBNTPCExam && result) {
+    return (
+      <RRBNTPCResultDialog isOpen={isOpen} onClose={onClose} result={result} />
     );
   }
 
