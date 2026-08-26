@@ -1185,20 +1185,47 @@ function itemSub(i, pct) {
   return `Failed: ${i.error || "error"}`;
 }
 
-function itemRow(i) {
-  const kind = kindOf(i.file && i.file.type, i.name);
-  const pct = taskDisplayPct(i);
-  // While uploading, show a spinning loader in place of the file-type icon.
-  const ic = i.phase === "uploading" ? `<span class="upd-spinner"></span>` : fileIcon(kind, 18);
-  const act = i.phase === "error" ? `<button class="upd-ia" data-up-action="retry" data-id="${i.id}" title="Retry">${icon("refresh", { size: 14 })}</button>` : i.phase === "queued" || i.phase === "uploading" ? `<button class="upd-ia" data-up-action="cancel" data-id="${i.id}" title="Cancel">${icon("x", { size: 14 })}</button>` : "";
-  return `<div class="upd-item ${i.phase}" data-up-item="${i.id}">
+// ---- Shared upload row component (used by the bottom dock AND the Uploads page)
+// Both places must show identical information: name, folder/size/time, stage,
+// speed, transferred/total, percentage, progress bar and a cancel button.
+function uploadTaskFromQueue(i) {
+  return {
+    id: i.jobId || i.id, cancelId: i.id, name: i.name, size: i.size, folderId: i.folderId,
+    phase: i.phase, stage: i.stage, uploaded: i.uploaded, total: i.total, speed: i.speed,
+    source: i.source || (i.url ? "url" : ""), part: i.part, error: i.error,
+    kind: kindOf(i.file && i.file.type, i.name), when: i.updatedAt || i.createdAt || 0,
+  };
+}
+function uploadRowHtml(t, opts = {}) {
+  const pct = taskDisplayPct(t);
+  const active = t.phase === "uploading" || t.phase === "queued";
+  const ic = t.phase === "uploading" ? `<span class="upd-spinner"></span>` : fileIcon(t.kind || kindOf("", t.name), 18);
+  const act =
+    t.phase === "error" && opts.retry
+      ? `<button class="upd-ia" data-up-action="retry" data-id="${t.cancelId || t.id}" title="Retry">${icon("refresh", { size: 14 })}</button>`
+      : active
+        ? `<button class="upd-ia" data-up-action="cancel" data-id="${t.cancelId || t.id}" title="Cancel">${icon("x", { size: 14 })}</button>`
+        : t.phase === "done"
+          ? `<span class="upd-ok">${icon("check", { size: 15 })}</span>`
+          : t.phase === "error"
+            ? `<span class="upd-bad">${icon("alert", { size: 15 })}</span>`
+            : "";
+  const when = t.when ? new Date(t.when).toLocaleString() : "";
+  const meta = [fmtSize(t.size), folderTitle(t.folderId), when].filter(Boolean).join(" · ");
+  return `<div class="upd-item ${t.phase}" data-up-item="${t.id}">
       <div class="upd-iic">${ic}</div>
-      <div class="upd-imain"><div class="upd-inm">${esc(i.name)} <span class="upd-ifld">${icon("folder", { size: 11 })} ${esc(folderTitle(i.folderId))}</span></div>
-        <div class="upd-isub" data-up-sub="${i.id}">${esc(itemSub(i, pct))}</div>
-        <div class="upd-bar sm"><div data-up-fill="${i.id}" style="width:${pct}%"></div></div></div>
+      <div class="upd-imain"><div class="upd-inm">${esc(t.name || "file")}</div>
+        <div class="upd-ifld">${icon("folder", { size: 11 })} ${esc(meta)}</div>
+        <div class="upd-isub" data-up-sub="${t.id}">${esc(itemSub(t, pct))}</div>
+        <div class="upd-bar sm"><div data-up-fill="${t.id}" style="width:${pct}%"></div></div></div>
       <div class="upd-iact">${act}</div>
     </div>`;
 }
+
+function itemRow(i) {
+  return uploadRowHtml(uploadTaskFromQueue(i), { retry: true });
+}
+
 function cancelUpload(id) {
   const it = up.queue.find((i) => i.id === id);
   if (!it) return;
