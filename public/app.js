@@ -1144,12 +1144,47 @@ function taskDisplayPct(i) {
   if (i.phase !== "uploading") return 0;
   return Math.min(100, Math.round(taskRaw(i) * 100));
 }
+// Human label for the current transfer stage. URL imports first stream the file
+// from the source into the server, then push it to Telegram.
+function stageLabel(i) {
+  if (i.stage === "sending") return i.part ? `Sending part ${i.part} to Telegram` : "Uploading to Telegram";
+  return i.source === "url" || i.url ? "Downloading from URL" : "Uploading to server";
+}
+// Rolling transfer rate (smoothed) for the current stage.
+function trackSpeed(t, stage, bytes) {
+  const now = Date.now();
+  if (t._spStage !== stage) {
+    t._spStage = stage;
+    t._spT = now;
+    t._spB = bytes;
+    t.speed = 0;
+    return;
+  }
+  const dt = (now - (t._spT || now)) / 1000;
+  if (dt < 0.35) return;
+  const db = bytes - (t._spB || 0);
+  t._spT = now;
+  t._spB = bytes;
+  if (db < 0) return;
+  const inst = db / dt;
+  t.speed = t.speed ? t.speed * 0.7 + inst * 0.3 : inst;
+}
 function itemSub(i, pct) {
   if (i.phase === "queued") return `Queued · ${fmtSize(i.size)}`;
-  if (i.phase === "uploading") return i.stage === "sending" ? (i.part ? `Sending part ${i.part} to Telegram · ${pct}%` : `Sending to Telegram · ${pct}%`) : `Uploading · ${pct}%`;
+  if (i.phase === "uploading") {
+    const cur = i.uploaded || 0;
+    const tot = i.total || i.size || 0;
+    const frac = tot ? Math.min(100, (cur / tot) * 100) : pct;
+    const bits = [stageLabel(i)];
+    if (i.speed > 0) bits.push(`Speed: ${fmtSize(i.speed)}/s`);
+    bits.push(`${fmtSize(cur)} / ${fmtSize(tot)}`);
+    bits.push(`${frac.toFixed(1)}%`);
+    return bits.join(" · ");
+  }
   if (i.phase === "done") return `Done · ${fmtSize(i.size)}`;
   return `Failed: ${i.error || "error"}`;
 }
+
 function itemRow(i) {
   const kind = kindOf(i.file && i.file.type, i.name);
   const pct = taskDisplayPct(i);
