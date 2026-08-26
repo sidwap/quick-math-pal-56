@@ -181,6 +181,10 @@ export async function getOne(client, peer, id) {
 /* ---------- upload ---------- */
 
 export function uploadFile(client, peer, { filePath, fileName, fileSize, caption, forceDocument, onProgress, thumb }) {
+  const size = Number(fileSize) || 0;
+  // More parallel parts = higher throughput. Scale with file size, capped so we
+  // stay within Telegram's per-connection limits.
+  const workers = size > 512 * 1024 * 1024 ? 16 : size > 64 * 1024 * 1024 ? 12 : size > 8 * 1024 * 1024 ? 8 : 4;
   return client.sendFile(peer, {
     file: filePath,
     fileName,
@@ -188,13 +192,19 @@ export function uploadFile(client, peer, { filePath, fileName, fileSize, caption
     caption: caption || "",
     forceDocument: !!forceDocument,
     supportsStreaming: true,
-    // GramJS defaults to one worker. Four parallel parts substantially improve
-    // throughput while staying well below its documented instability threshold.
-    workers: 4,
+    workers,
     thumb,
-    progressCallback: onProgress,
+    // GramJS reports progress as a 0..1 fraction — convert to bytes so callers
+    // get real transferred/total values (and correct speed).
+    progressCallback: onProgress
+      ? (fraction) => {
+          const ratio = Math.max(0, Math.min(1, Number(fraction) || 0));
+          onProgress(Math.round(ratio * size), size, ratio);
+        }
+      : undefined,
   });
 }
+
 
 /* ---------- rename (caption) / delete ---------- */
 

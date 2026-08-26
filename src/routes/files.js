@@ -291,16 +291,19 @@ async function uploadHandler(req, res, next, source = null) {
       caption,
       forceDocument,
       thumb: thumbPath,
-      onProgress: (uploaded, total) => {
+      onProgress: (uploaded, total, ratio) => {
         if (!job) return;
+        const totalBytes = Number(total) || size || 0;
+        const sentBytes = Number(uploaded) || Math.round((Number(ratio) || 0) * totalBytes);
         publish(job, {
           phase: "sending",
           source: src,
-          uploaded: String(uploaded),
-          total: String(total),
-          ratio: total ? Number(uploaded) / Number(total) : 0,
+          uploaded: String(sentBytes),
+          total: String(totalBytes),
+          ratio: totalBytes ? sentBytes / totalBytes : Number(ratio) || 0,
         });
       },
+
     });
     fs.rm(upDir, { recursive: true, force: true }, () => {});
     const file = serializeMessage(sent);
