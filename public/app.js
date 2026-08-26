@@ -1255,6 +1255,8 @@ function addUploadTask({ file, url, name, folderId }) {
     phase: "queued",
     error: null,
     part: null,
+    speed: 0,
+    source: url ? "url" : "device",
   };
 
   up.queue.push(t);
@@ -1352,15 +1354,18 @@ function applyJobState(t, d) {
   t._seen = Date.now();
   if (d.error) return failTask(t, d.error);
   if (d.done) return doneTask(t);
+  if (d.source) t.source = d.source;
   if (d.phase === "receiving") {
     t.stage = "receiving";
     t.uploaded = Number(d.received) || t.uploaded;
     t.total = Number(d.size) || t.total;
+    trackSpeed(t, "receiving", t.uploaded || 0);
   } else if (d.phase === "sending") {
     t.stage = "sending";
     t.uploaded = Number(d.uploaded) || 0;
     t.total = Number(d.total) || t.total;
     t.part = d.multipart ? d.part : null;
+    trackSpeed(t, "sending" + (t.part || ""), t.uploaded || 0);
   }
   scheduleUpRender();
   refreshUploadsView();
@@ -1837,7 +1842,12 @@ function uploadHistoryRow(u) {
     size: Number(u.size) || 0,
   };
   const pct = taskDisplayPct(task);
-  const status = phase === "done" ? "Completed" : phase === "error" ? `Failed · ${d.error || "Upload error"}` : d.phase === "sending" ? `Sending to Telegram · ${pct}%` : `Uploading to server · ${pct}%`;
+  const cur = Number(d.uploaded || d.received || 0);
+  const tot = Number(d.total || d.size || u.size || 0);
+  const bytesTxt = tot ? ` · ${fmtSize(cur)} / ${fmtSize(tot)}` : "";
+  const frac = tot ? Math.min(100, (cur / tot) * 100).toFixed(1) : pct;
+  const stageTxt = d.phase === "sending" ? "Uploading to Telegram" : u.source === "url" ? "Downloading from URL" : "Uploading to server";
+  const status = phase === "done" ? "Completed" : phase === "error" ? `Failed · ${d.error || "Upload error"}` : `${stageTxt}${bytesTxt} · ${frac}%`;
   const when = new Date(u.updatedAt || u.createdAt || Date.now()).toLocaleString();
   const statusIcon = phase === "done" ? icon("check", { size: 15 }) : phase === "error" ? icon("alert", { size: 15 }) : `<span class="upd-spinner"></span>`;
   return `<div class="uploads-row">
