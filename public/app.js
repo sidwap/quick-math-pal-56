@@ -1846,7 +1846,7 @@ function uploadHistoryRow(u) {
   const tot = Number(d.total || d.size || u.size || 0);
   const bytesTxt = tot ? ` · ${fmtSize(cur)} / ${fmtSize(tot)}` : "";
   const frac = tot ? Math.min(100, (cur / tot) * 100).toFixed(1) : pct;
-  const stageTxt = d.phase === "sending" ? "Uploading to Telegram" : u.source === "url" ? "Downloading from URL" : "Uploading to server";
+  const stageTxt = d.phase === "sending" ? "Uploading to Telegram" : (d.source || u.source) === "url" ? "Downloading from URL" : "Uploading to server";
   const status = phase === "done" ? "Completed" : phase === "error" ? `Failed · ${d.error || "Upload error"}` : `${stageTxt}${bytesTxt} · ${frac}%`;
   const when = new Date(u.updatedAt || u.createdAt || Date.now()).toLocaleString();
   const statusIcon = phase === "done" ? icon("check", { size: 15 }) : phase === "error" ? icon("alert", { size: 15 }) : `<span class="upd-spinner"></span>`;
