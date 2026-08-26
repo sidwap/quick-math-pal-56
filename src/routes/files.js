@@ -156,6 +156,7 @@ files.get("/files/upload/progress", requireAppAuth, (req, res) => {
 /* --------- upload (shared by device upload and URL import) --------- */
 async function uploadHandler(req, res, next, source = null) {
   const job = String(req.headers["x-job"] || "");
+  const src = source ? "url" : "device";
   let tmp = "";
   let upDir = "";
   try {
@@ -182,7 +183,7 @@ async function uploadHandler(req, res, next, source = null) {
     await new Promise((resolve, reject) => {
       const onData = (c) => {
         received += c.length;
-        if (job) publish(job, { phase: "receiving", received, size, ratio: size ? received / size : 0 });
+        if (job) publish(job, { phase: "receiving", source: src, received, size, ratio: size ? received / size : 0 });
       };
       input.on("data", onData);
       input.pipe(out);
@@ -194,7 +195,7 @@ async function uploadHandler(req, res, next, source = null) {
 
     // URL imports may not advertise a length — trust the bytes actually written.
     if (!size) { try { size = fs.statSync(tmp).size; } catch {} }
-    if (job) publish(job, { phase: "sending", uploaded: 0, total: size, ratio: 0 });
+    if (job) publish(job, { phase: "sending", source: src, uploaded: 0, total: size, ratio: 0 });
 
     let thumbPath;
     if (IMAGE_RE.test(fileName)) {
@@ -247,6 +248,7 @@ async function uploadHandler(req, res, next, source = null) {
               const overall = uploadedSoFar + Number(uploaded);
               publish(job, {
                 phase: "sending",
+                source: src,
                 uploaded: String(overall),
                 total: String(size),
                 ratio: size ? overall / size : 0,
@@ -293,6 +295,7 @@ async function uploadHandler(req, res, next, source = null) {
         if (!job) return;
         publish(job, {
           phase: "sending",
+          source: src,
           uploaded: String(uploaded),
           total: String(total),
           ratio: total ? Number(uploaded) / Number(total) : 0,
