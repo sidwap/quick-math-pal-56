@@ -1858,30 +1858,23 @@ function refreshUploadsView() {
   uploadsViewTimer = setTimeout(viewUploads, 1000);
 }
 
-function uploadHistoryRow(u) {
+// Speed tracking for server-reported jobs that aren't in this tab's queue.
+const upHistSpeed = new Map();
+function uploadTaskFromHistory(u) {
   const d = u.state || {};
-  const phase = d.error ? "error" : d.done ? "done" : u.phase || "uploading";
-  const task = {
-    phase: phase === "receiving" || phase === "sending" ? "uploading" : phase,
-    stage: d.phase === "sending" ? "sending" : "receiving",
-    uploaded: Number(d.uploaded ?? d.received) || 0,
-    total: Number(d.total ?? d.size) || Number(u.size) || 0,
-    size: Number(u.size) || 0,
+  const phase = d.error ? "error" : d.done ? "done" : u.phase === "done" || u.phase === "error" ? u.phase : "uploading";
+  const stage = d.phase === "sending" ? "sending" : "receiving";
+  const uploaded = Number(d.uploaded ?? d.received) || 0;
+  let t = upHistSpeed.get(u.id);
+  if (!t) upHistSpeed.set(u.id, (t = {}));
+  if (phase === "uploading") trackSpeed(t, stage, uploaded);
+  else t.speed = 0;
+  return {
+    id: u.id, name: u.name, size: Number(u.size) || 0, folderId: u.folderId,
+    phase, stage, uploaded, total: Number(d.total ?? d.size) || Number(u.size) || 0,
+    speed: t.speed, source: d.source || u.source, part: d.part, error: d.error,
+    when: u.updatedAt || u.createdAt || Date.now(),
   };
-  const pct = taskDisplayPct(task);
-  const cur = Number(d.uploaded || d.received || 0);
-  const tot = Number(d.total || d.size || u.size || 0);
-  const bytesTxt = tot ? ` · ${fmtSize(cur)} / ${fmtSize(tot)}` : "";
-  const frac = tot ? Math.min(100, (cur / tot) * 100).toFixed(1) : pct;
-  const stageTxt = d.phase === "sending" ? "Uploading to Telegram" : (d.source || u.source) === "url" ? "Downloading from URL" : "Uploading to server";
-  const status = phase === "done" ? "Completed" : phase === "error" ? `Failed · ${d.error || "Upload error"}` : `${stageTxt}${bytesTxt} · ${frac}%`;
-  const when = new Date(u.updatedAt || u.createdAt || Date.now()).toLocaleString();
-  const statusIcon = phase === "done" ? icon("check", { size: 15 }) : phase === "error" ? icon("alert", { size: 15 }) : `<span class="upd-spinner"></span>`;
-  return `<div class="uploads-row">
-    <div class="upd-iic">${phase === "done" || phase === "error" ? fileIcon(kindOf("", u.name), 18) : `<span class="upd-spinner"></span>`}</div>
-    <div class="uploads-row-main"><div class="uploads-row-name">${esc(u.name)}</div><div class="uploads-row-meta">${fmtSize(u.size)} · ${esc(folderTitle(u.folderId))} · ${esc(when)}</div>${phase !== "done" && phase !== "error" ? `<div class="upd-bar"><div style="width:${pct}%"></div></div>` : ""}</div>
-    <div class="uploads-status ${phase}">${statusIcon}<span>${esc(status)}</span></div>
-  </div>`;
 }
 
 async function viewUploads() {
@@ -1894,20 +1887,33 @@ async function viewUploads() {
     const r = await api("/api/files/uploads/history?limit=100");
     if (state.currentView !== "uploads") return;
     const server = Array.isArray(r.uploads) ? r.uploads : [];
-    const known = new Set(server.map((u) => u.id));
-    const local = up.queue.filter((i) => !known.has(i.jobId || i.id)).map((i) => ({
-      id: i.jobId || i.id, folderId: i.folderId, name: i.name, size: i.size,
-      phase: i.phase, updatedAt: Date.now(), state: i.phase === "error" ? { error: i.error } : i.phase === "done" ? { done: true } : { phase: i.stage || "receiving", uploaded: i.uploaded, total: i.total },
-    }));
-    const rows = [...local, ...server];
-    const active = rows.filter((u) => !u.state?.done && !u.state?.error && u.phase !== "done" && u.phase !== "error").length;
-    const done = rows.filter((u) => u.state?.done || u.phase === "done").length;
-    const failed = rows.filter((u) => u.state?.error || u.phase === "error").length;
-    root.innerHTML = `<div class="uploads-page"><div class="uploads-summary"><div class="uploads-stat"><strong>${active}</strong><span>In progress</span></div><div class="uploads-stat"><strong>${done}</strong><span>Completed</span></div><div class="uploads-stat"><strong>${failed}</strong><span>Failed</span></div></div>${rows.length ? `<div class="uploads-list">${rows.map(uploadHistoryRow).join("")}</div>` : emptyHtml("No upload history yet", "history")}</div>`;
+    // Live queue items win: they carry real-time bytes, speed and a cancel handle.
+    const localById = new Map(up.queue.map((i) => [i.jobId || i.id, i]));
+    const tasks = [
+      ...up.queue.map((i) => uploadTaskFromQueue(i)),
+      ...server.filter((u) => !localById.has(u.id)).map(uploadTaskFromHistory),
+    ];
+    const active = tasks.filter((t) => t.phase === "uploading" || t.phase === "queued").length;
+    const done = tasks.filter((t) => t.phase === "done").length;
+    const failed = tasks.filter((t) => t.phase === "error").length;
+    root.innerHTML = `<div class="uploads-page"><div class="uploads-summary"><div class="uploads-stat"><strong>${active}</strong><span>In progress</span></div><div class="uploads-stat"><strong>${done}</strong><span>Completed</span></div><div class="uploads-stat"><strong>${failed}</strong><span>Failed</span></div></div>${tasks.length ? `<div class="uploads-list">${tasks.map((t) => uploadRowHtml(t, { retry: true })).join("")}</div>` : emptyHtml("No upload history yet", "history")}</div>`;
+    const list = root.querySelector(".uploads-list");
+    if (list && !list._bound) {
+      list._bound = true;
+      list.addEventListener("click", (e) => {
+        const b = e.target.closest("[data-up-action]");
+        if (!b) return;
+        if (b.dataset.upAction === "cancel") cancelUpload(b.dataset.id);
+        else if (b.dataset.upAction === "retry") retryUpload(b.dataset.id);
+        renderUploader();
+        viewUploads();
+      });
+    }
   } catch (err) {
     root.innerHTML = emptyHtml(err.message, "alert");
   }
 }
+
 
 async function viewShares() {
   $("#title").innerHTML = `${icon("share", { size: 18 })} Share links`;
