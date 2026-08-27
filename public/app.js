@@ -1852,11 +1852,17 @@ async function openView(v) {
 }
 
 let uploadsViewTimer = null;
+// Throttle (not debounce): progress events arrive continuously, so a debounce
+// would never fire and the page would look frozen while the dock kept moving.
 function refreshUploadsView() {
   if (state.currentView !== "uploads") return;
-  clearTimeout(uploadsViewTimer);
-  uploadsViewTimer = setTimeout(viewUploads, 1000);
+  if (uploadsViewTimer) return;
+  uploadsViewTimer = setTimeout(() => {
+    uploadsViewTimer = null;
+    viewUploads();
+  }, 700);
 }
+
 
 // Speed tracking for server-reported jobs that aren't in this tab's queue.
 const upHistSpeed = new Map();
