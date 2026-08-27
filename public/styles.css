@@ -705,6 +705,6 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
   .searchbox .search { height: 42px; }
   .uploads-summary { display: grid; grid-template-columns: 1fr 1fr; }
   .uploads-stat { min-width: 0; }
-  .uploads-row { grid-template-columns: 30px minmax(0,1fr); }
-  .uploads-status { grid-column: 2; justify-self: start; }
+  .uploads-list .upd-item { padding: 11px 10px; }
+
 }
