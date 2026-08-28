@@ -88,5 +88,12 @@ export const config = {
       const [id, hash] = s.split(":");
       return { id: id.trim(), hash: hash.trim() };
     }),
+  // Local Telethon upload microservice (pyservice/). Uploads prefer it and
+  // silently fall back to the in-process GramJS uploader when it is down.
+  uploadService: {
+    enabled: String(process.env.UPLOAD_SERVICE_ENABLED ?? "1") !== "0",
+    url: (process.env.UPLOAD_SERVICE_URL || "http://127.0.0.1:8765").replace(/\/$/, ""),
+    token: process.env.UPLOAD_SERVICE_TOKEN || "",
+  },
   isProd: process.env.NODE_ENV === "production",
 };

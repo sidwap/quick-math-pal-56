@@ -303,3 +303,35 @@ The script upserts every table (`users`, `accounts`, `folders`, `shares`, `api_k
 `sessions`, `multipart_files`, `upload_jobs`, `meta`) into the matching collection and is
 safe to re-run. `better-sqlite3` is an optional dependency and is only needed for this
 script or for local SQLite mode.
+
+## Fast uploads (Telethon microservice)
+
+GramJS uploads plateau under ~1 MB/s. A small Python service (`pyservice/`) does
+the Telegram upload with Telethon over several parallel MTProto connections and
+is typically many times faster. It runs on `127.0.0.1` only, reuses the existing
+Telegram session (no extra login), and the Node app falls back to GramJS
+automatically whenever the service is not running.
+
+```bash
+cd pyservice
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt          # includes cryptg (native AES)
+cd ..
+
+# add to .env (same token for both processes)
+UPLOAD_SERVICE_ENABLED=1
+UPLOAD_SERVICE_URL=http://127.0.0.1:8765
+UPLOAD_SERVICE_TOKEN=<openssl rand -hex 24>
+```
+
+Start both processes with PM2:
+
+```bash
+UPLOAD_SERVICE_TOKEN=<same token> pm2 start ecosystem.config.cjs
+pm2 save
+curl -s http://127.0.0.1:8765/health      # {"ok":true,"cryptg":true,...}
+```
+
+If `cryptg` fails to build (no compiler on the host), everything still works —
+the service logs a warning and runs slower. Set `UPLOAD_SERVICE_ENABLED=0` to go
+back to GramJS-only uploads.
