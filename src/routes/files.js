@@ -154,6 +154,50 @@ files.get("/files/upload/progress", requireAppAuth, (req, res) => {
 
 
 /* --------- upload (shared by device upload and URL import) --------- */
+
+// Send one on-disk file to Telegram. Prefers the local Telethon microservice
+// (much higher throughput) and falls back to the in-process GramJS uploader
+// whenever that service is unavailable or refuses the job.
+async function sendToTelegram(ctx, opts) {
+  const { job, accountId, peerJson, peer, client } = ctx;
+  if (await pyServiceHealthy()) {
+    const account = stmt.getAccount.get(accountId);
+    if (account?.session) {
+      try {
+        const sent = await pyUploadFile({
+          job,
+          accountId,
+          account,
+          peer: peerJson,
+          filePath: opts.filePath,
+          fileName: opts.fileName,
+          fileSize: opts.fileSize,
+          caption: opts.caption,
+          forceDocument: opts.forceDocument,
+          thumb: opts.thumb,
+          onProgress: opts.onProgress,
+        });
+        if (sent?.id) return sent;
+      } catch (e) {
+        if (e instanceof PyUploadUnavailable) {
+          console.warn("[upload] Telethon service unavailable, falling back to GramJS:", e.message);
+        } else {
+          throw e;
+        }
+      }
+    }
+  }
+  return uploadFile(client, peer, {
+    filePath: opts.filePath,
+    fileName: opts.fileName,
+    fileSize: opts.fileSize,
+    caption: opts.caption,
+    forceDocument: opts.forceDocument,
+    thumb: opts.thumb,
+    onProgress: opts.onProgress ? (uploaded, total) => opts.onProgress(uploaded, total) : undefined,
+  });
+}
+
 async function uploadHandler(req, res, next, source = null) {
   const job = String(req.headers["x-job"] || "");
   const src = source ? "url" : "device";
@@ -162,6 +206,10 @@ async function uploadHandler(req, res, next, source = null) {
   try {
     const { row, peer } = await loadFolder(req);
     const client = await getConnectedClient(req.accountId);
+    const tgCtx = { job, accountId: req.accountId, peerJson: row.peer_json, peer, client };
+    // A browser that cancels an upload just aborts the request — forward that
+    // to the Telethon service so its transfer stops too.
+    req.on("aborted", () => { if (job) cancelPyUpload(job); });
     const fileName = safeFilename(source ? source.fileName : decodeURIComponent(req.headers["x-filename"] || "file"));
     let size = Number(source ? source.size || 0 : req.headers["x-filesize"] || 0);
     const caption = req.headers["x-caption"] ? decodeURIComponent(req.headers["x-caption"]) : "";
