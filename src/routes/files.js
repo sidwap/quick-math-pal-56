@@ -21,6 +21,7 @@ import {
   streamThumb,
 } from "../tg/operations.js";
 import { publish, subscribe, finish, fail, snapshot, start } from "../jobs.js";
+import { pyUploadFile, pyServiceHealthy, cancelPyUpload, PyUploadUnavailable } from "../tg/pyUpload.js";
 import { uid, safeFilename } from "../util.js";
 import { generateThumb, IMAGE_RE } from "../thumb.js";
 
@@ -285,7 +286,7 @@ async function uploadHandler(req, res, next, source = null) {
           const partName = `${fileName}.part${partIndex}`.replace(/[\\/]/g, "_");
           const partPath = `${upDir}/${partName}`;
           await sliceToFile(tmp, offset, thisSize, partPath);
-          const sent = await uploadFile(client, peer, {
+          const sent = await sendToTelegram(tgCtx, {
             filePath: partPath,
             fileName: partName,
             fileSize: thisSize,
@@ -332,7 +333,7 @@ async function uploadHandler(req, res, next, source = null) {
       return res.json({ ok: true, file });
     }
 
-    const sent = await uploadFile(client, peer, {
+    const sent = await sendToTelegram(tgCtx, {
       filePath: tmp,
       fileName,
       fileSize: size || undefined,
